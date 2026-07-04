@@ -42,12 +42,41 @@ demonstrably met.
 | Audio smoke (Phase 4 ✅) | manual — see `docs/audio-smoke-checklist.md` *(needs a desktop + audio device; L1 perceptual SFX-in-sync checklist; oracle/`-nosound` modes suppress audio)* |
 | Loopback net test (Phase 5 ✅) | `ctest --test-dir build -R net-loopback` *(2 real `doom` procs over 127.0.0.1 UDP via `platform/posix/i_net_posix.c`; scripted per-node input; asserts lockstep held (no consistency failure) + self-frozen 2-player checksum `e8ca533e8baf4ad4`)* |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
+| Package a release locally | `./tools/package_release.sh <version> [build-dir] [out-dir]` *(self-contained tarball: engine + vendored SDL2 + Freedoom `doom1.wad` + licenses + `run-doom.sh`; macOS ad-hoc-signs + rewrites rpath; fails on any leaked build/Homebrew path)* |
+| Cut a downloadable release | `git tag vX.Y.Z && git push origin vX.Y.Z` *(triggers `.github/workflows/release.yml`)* |
 
 CI (`.github/workflows/ci.yml`, Phase 3 ✅) builds on **Linux + macOS** and runs
 `build → ctest` (the full 5-target parity gate, incl. `net-loopback` Phase 5 ✅)
 on every push to `main`, every PR, and `workflow_dispatch`. It is **not** yet a
 *required* status check — enforcement is a manual GitHub-UI step (Settings →
 Branches → protect `main`).
+
+## Releases
+
+Downloadable macOS + Linux builds are published by
+`.github/workflows/release.yml`, triggered by pushing a **version tag** `v*`.
+
+**When to tag:** only from `main`, after the phase/feature work is merged and CI
+is green on `main`. A release is a snapshot of an already-green `main`, never a
+way to ship un-merged work.
+
+**How to tag (semantic versioning `vMAJOR.MINOR.PATCH`):**
+
+```
+git checkout main && git pull
+git tag v1.0.0            # annotate if you like: git tag -a v1.0.0 -m "…"
+git push origin v1.0.0
+```
+
+The tag push runs the release workflow: it builds on `ubuntu-22.04` + `macos-latest`,
+runs the **full parity gate** (a red gate blocks the release), packages each
+platform tarball via `tools/package_release.sh`, **smoke-boots the packaged
+tarball headlessly**, attaches a GPLv2 corresponding-source archive
+(`doom-<tag>-source.tar.gz`), and publishes the GitHub Release. Versioning: bump
+**PATCH** for fixes, **MINOR** for new user-visible capability, **MAJOR** for a
+break in the WAD/demo data contract or CLI. Use `-rcN`/`-beta` suffixes for
+pre-releases. `workflow_dispatch` allows a manual dry-run without tagging.
+Full checklist + release-notes template: `docs/RELEASING.md`.
 
 > **Never invent a command you haven't verified.** The only command verified
 > against the current tree is `make` in `linuxdoom-1.10/` and `legacy/sndserv/`
@@ -125,3 +154,7 @@ entry), the PR instead carries the achievable rung's evidence — captured demo
 checksum / frame hashes, CMake-builds-clean, smoke-checklist results — with
 residual risk named. *(CI runs on PRs but is not yet a required status check —
 enforcing it on `main` is a manual GitHub-UI step.)*
+
+Post-modernization work (docs, packaging, releases) follows the same
+branch-then-PR rule. **Releases are tagged from `main` only**, after the PR is
+merged and CI is green — never from a feature branch (see "Releases" above).

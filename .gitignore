@@ -8,3 +8,6 @@ sndserv/linux/
 
 # Editor / OS noise
 .DS_Store
+
+# Release packaging output
+/dist/
