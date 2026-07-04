@@ -899,7 +899,7 @@ void G_DeathMatchSpawnPlayer (int playernum)
     int             i,j; 
     int				selections; 
 	 
-    selections = deathmatch_p - deathmatchstarts; 
+    selections = (int)(deathmatch_p - deathmatchstarts); 
     if (selections < 4) 
 	I_Error ("Only %i deathmatch spots, 4 required", selections); 
  
@@ -1306,7 +1306,7 @@ void G_DoSaveGame (void)
 	 
     *save_p++ = 0x1d;		// consistancy marker 
 	 
-    length = save_p - savebuffer; 
+    length = (int)(save_p - savebuffer); 
     if (length > SAVEGAMESIZE) 
 	I_Error ("Savegame buffer overrun"); 
     M_WriteFile (name, savebuffer, length); 
@@ -1677,7 +1677,7 @@ boolean G_CheckDemoStatus (void)
     if (demorecording) 
     { 
 	*demo_p++ = DEMOMARKER; 
-	M_WriteFile (demoname, demobuffer, demo_p - demobuffer); 
+	M_WriteFile (demoname, demobuffer, (int)(demo_p - demobuffer)); 
 	Z_Free (demobuffer); 
 	demorecording = false; 
 	I_Error ("Demo %s recorded",demoname); 

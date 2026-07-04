@@ -45,7 +45,7 @@ FixedMul
 ( fixed_t	a,
   fixed_t	b )
 {
-    return ((long long) a * (long long) b) >> FRACBITS;
+    return (fixed_t)(((long long) a * (long long) b) >> FRACBITS);
 }
 
 

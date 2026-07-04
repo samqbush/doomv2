@@ -746,7 +746,7 @@ void FindResponseFile (void)
 	    }
 	    printf("Found response file %s!\n",&myargv[i][1]);
 	    fseek (handle,0,SEEK_END);
-	    size = ftell(handle);
+	    size = (int)ftell(handle);
 	    fseek (handle,0,SEEK_SET);
 	    file = malloc (size);
 	    fread (file,size,1,handle);
@@ -1119,7 +1119,7 @@ void D_DoomMain (void)
 	// for statistics driver
 	extern  void*	statcopy;                            
 
-	statcopy = (void*)atoi(myargv[p+1]);
+	statcopy = (void*)(intptr_t)atoi(myargv[p+1]);
 	printf ("External statistics registered.\n");
     }
     

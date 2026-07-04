@@ -77,13 +77,13 @@ P_SetPsprite
 	
 	state = &states[stnum];
 	psp->state = state;
-	psp->tics = state->tics;	// could be 0
+	psp->tics = (int)state->tics;	// could be 0
 
 	if (state->misc1)
 	{
 	    // coordinate set
-	    psp->sx = state->misc1 << FRACBITS;
-	    psp->sy = state->misc2 << FRACBITS;
+	    psp->sx = (fixed_t)(state->misc1 << FRACBITS);
+	    psp->sy = (fixed_t)(state->misc2 << FRACBITS);
 	}
 	
 	// Call action routine.
@@ -744,9 +744,9 @@ A_FireCGun
 
     P_SetPsprite (player,
 		  ps_flash,
-		  weaponinfo[player->readyweapon].flashstate
+		  (statenum_t)(weaponinfo[player->readyweapon].flashstate
 		  + psp->state
-		  - &states[S_CHAIN1] );
+		  - &states[S_CHAIN1]) );
 
     P_BulletSlope (player->mo);
 	
