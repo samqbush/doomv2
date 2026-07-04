@@ -31,7 +31,7 @@ rcsid[] = "$Id: w_wad.c,v 1.5 1997/02/03 16:47:57 b1 Exp $";
 #include <sys/types.h>
 #include <string.h>
 #include <unistd.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <alloca.h>
@@ -78,7 +78,7 @@ int filelength (int handle)
     if (fstat (handle,&fileinfo) == -1)
 	I_Error ("Error fstating");
 
-    return fileinfo.st_size;
+    return (int)fileinfo.st_size;
 }
 
 
@@ -381,7 +381,7 @@ int W_CheckNumForName (char* name)
 	if ( *(int *)lump_p->name == v1
 	     && *(int *)&lump_p->name[4] == v2)
 	{
-	    return lump_p - lumpinfo;
+	    return (int)(lump_p - lumpinfo);
 	}
     }
 
@@ -454,7 +454,7 @@ W_ReadLump
 	handle = l->handle;
 		
     lseek (handle, l->position, SEEK_SET);
-    c = read (handle, dest, l->size);
+    c = (int)read (handle, dest, l->size);
 
     if (c < l->size)
 	I_Error ("W_ReadLump: only read %i of %i on lump %i",
