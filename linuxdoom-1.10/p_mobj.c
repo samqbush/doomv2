@@ -68,9 +68,9 @@ P_SetMobjState
 
 	st = &states[state];
 	mobj->state = st;
-	mobj->tics = st->tics;
+	mobj->tics = (int)st->tics;
 	mobj->sprite = st->sprite;
-	mobj->frame = st->frame;
+	mobj->frame = (int)st->frame;
 
 	// Modified handling.
 	// Call action functions when the state is set
@@ -509,9 +509,9 @@ P_SpawnMobj
     st = &states[info->spawnstate];
 
     mobj->state = st;
-    mobj->tics = st->tics;
+    mobj->tics = (int)st->tics;
     mobj->sprite = st->sprite;
-    mobj->frame = st->frame;
+    mobj->frame = (int)st->frame;
 
     // set subsector and/or block links
     P_SetThingPosition (mobj);

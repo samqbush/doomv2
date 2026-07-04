@@ -379,7 +379,7 @@ void F_StartCast (void)
     wipegamestate = -1;		// force a screen wipe
     castnum = 0;
     caststate = &states[mobjinfo[castorder[castnum].type].seestate];
-    casttics = caststate->tics;
+    casttics = (int)caststate->tics;
     castdeath = false;
     finalestage = 2;	
     castframes = 0;
@@ -489,7 +489,7 @@ void F_CastTicker (void)
 	}
     }
 	
-    casttics = caststate->tics;
+    casttics = (int)caststate->tics;
     if (casttics == -1)
 	casttics = 15;
 }
@@ -510,7 +510,7 @@ boolean F_CastResponder (event_t* ev)
     // go into death frame
     castdeath = true;
     caststate = &states[mobjinfo[castorder[castnum].type].deathstate];
-    casttics = caststate->tics;
+    casttics = (int)caststate->tics;
     castframes = 0;
     castattacking = false;
     if (mobjinfo[castorder[castnum].type].deathsound)
