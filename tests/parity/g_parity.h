@@ -20,4 +20,14 @@ int G_ParityEnabled(void);
 // nothing (returns) if -checkdemo was not supplied.
 void G_ParityCheckAndExit(void);
 
+// True if -framehash was supplied. In frame-hash mode the caller (D_DoomMain)
+// forces singletics so gametic == displayed-frame index, making the sampled
+// frames deterministic.
+int G_ParityFrameHashEnabled(void);
+
+// Sample the indexed framebuffer screens[0] if the current gametic is one of
+// the fixed target tics and no wipe is in progress. Called from D_Display just
+// before the final blit. Inert unless -framehash was supplied.
+void G_ParityFrameSample(int wipe_in_progress);
+
 #endif

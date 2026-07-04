@@ -2,15 +2,16 @@ cmake_minimum_required(VERSION 3.16)
 project(doom C)
 
 #
-# Phase 1 (Modernization) build.
+# DOOM (Modernization) build.
 #
-# Goal: compile and link the portable 1997 DOOM core 64-bit-clean on a modern
-# toolchain, driven by STUB platform files (no X11/OSS/SDL yet). This produces a
-# linkable `doom` binary; it does not render or run a real game (that is Phase 2).
+# Phase 1 got the portable 1997 core linking 64-bit-clean behind no-op stubs.
+# Phase 2 swaps in a real SDL2 platform layer (video blit + timing/input) so the
+# engine boots, renders, and replays a demo to a frozen parity checksum.
 #
 # The dead X11/OSS/BSD platform sources (i_video.c, i_sound.c, i_net.c,
-# i_system.c) are excluded and replaced by no-op/single-player stubs under
-# platform/stub/. The originals are kept untouched for the Phase 2/4 rewrite.
+# i_system.c) are excluded from the core glob. Video + system are provided by
+# platform/sdl/; sound + net remain no-op stubs under platform/stub/ until
+# Phases 4/5. The originals are kept untouched for reference.
 #
 
 set(CMAKE_C_STANDARD 11)
@@ -27,16 +28,21 @@ list(REMOVE_ITEM CORE_SOURCES
   ${LEGACY_DIR}/i_system.c)
 
 set(STUB_SOURCES
-  ${CMAKE_SOURCE_DIR}/platform/stub/i_video_stub.c
   ${CMAKE_SOURCE_DIR}/platform/stub/i_sound_stub.c
-  ${CMAKE_SOURCE_DIR}/platform/stub/i_net_stub.c
-  ${CMAKE_SOURCE_DIR}/platform/stub/i_system_stub.c)
+  ${CMAKE_SOURCE_DIR}/platform/stub/i_net_stub.c)
+
+# Phase 2 SDL2 platform layer: real video (blit) + system (timing/input).
+# Audio (i_sound) and net (i_net) stay stubbed until Phases 4/5.
+find_package(SDL2 REQUIRED)
+set(SDL_SOURCES
+  ${CMAKE_SOURCE_DIR}/platform/sdl/i_video_sdl.c
+  ${CMAKE_SOURCE_DIR}/platform/sdl/i_system_sdl.c)
 
 # Phase 2 demo-parity oracle instrumentation (inert unless -checkdemo).
 set(PARITY_SOURCES
   ${CMAKE_SOURCE_DIR}/tests/parity/g_parity.c)
 
-add_executable(doom ${CORE_SOURCES} ${STUB_SOURCES} ${PARITY_SOURCES})
+add_executable(doom ${CORE_SOURCES} ${STUB_SOURCES} ${SDL_SOURCES} ${PARITY_SOURCES})
 
 target_include_directories(doom PRIVATE ${LEGACY_DIR} ${CMAKE_SOURCE_DIR}/tests/parity)
 
@@ -52,7 +58,7 @@ target_compile_options(doom PRIVATE
   -Wint-to-pointer-cast
   -Wshorten-64-to-32)
 
-target_link_libraries(doom m)
+target_link_libraries(doom m SDL2::SDL2)
 
 #
 # Phase 2 demo-parity oracle tests (see docs/oracle/ORACLE_STRATEGY.md).
@@ -60,7 +66,9 @@ target_link_libraries(doom m)
 # demo-regen: gen_demo.py reproduces the committed parity.lmp byte-exact.
 # demo-parity: replay the scripted v110 demo headless under -checkdemo and
 #              assert the frozen canonical world-state checksum.
-# frame-smoke is added once the SDL software drawer is available (Phase 2 §C).
+# frame-smoke: assert the byte-exact indexed screens[0] frame hashes (software
+#              drawer) against the frozen frame master.
+# palette-lut: validate I_SetPalette's index->ARGB8888 conversion + gamma.
 #
 enable_testing()
 
@@ -69,5 +77,13 @@ add_test(NAME demo-regen
 
 add_test(NAME demo-parity
   COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/demo_parity.sh
+          $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
+
+add_test(NAME frame-smoke
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/frame_smoke.sh
+          $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
+
+add_test(NAME palette-lut
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/palette_lut.sh
           $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
 

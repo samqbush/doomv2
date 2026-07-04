@@ -76,6 +76,7 @@ static const char rcsid[] = "$Id: d_main.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 
 
 #include "d_main.h"
+#include "g_parity.h"
 
 //
 // D-DoomLoop()
@@ -315,6 +316,9 @@ void D_Display (void)
     M_Drawer ();          // menu is drawn even on top of everything
     NetUpdate ();         // send out any new accumulation
 
+    // Phase 2 frame-hash oracle: sample the composed indexed frame just before
+    // the blit, only when no melt wipe is in progress. Inert unless -framehash.
+    G_ParityFrameSample (wipe);
 
     // normal update
     if (!wipe)
@@ -1123,6 +1127,12 @@ void D_DoomMain (void)
 	printf ("External statistics registered.\n");
     }
     
+    // Phase 2 palette-LUT gate: validate I_SetPalette index->ARGB conversion
+    // and exit cleanly. Runs after WADs are loaded (PLAYPAL available); needs
+    // no SDL window, so it is headless-safe for ctest.
+    if (M_CheckParm ("-paltest"))
+	exit (I_PaletteSelfTest ());
+
     // start the apropriate game based on parms
     p = M_CheckParm ("-record");
 
@@ -1136,6 +1146,10 @@ void D_DoomMain (void)
     if (p && p < myargc-1)
     {
 	singledemo = true;              // quit after one demo
+	// Phase 2 frame-hash oracle: force singletics so gametic == displayed
+	// frame index, making sampled frames deterministic (see g_parity.c).
+	if (G_ParityFrameHashEnabled())
+	    singletics = true;
 	G_DeferedPlayDemo (myargv[p+1]);
 	D_DoomLoop ();  // never returns
     }

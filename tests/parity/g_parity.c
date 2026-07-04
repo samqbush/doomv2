@@ -13,9 +13,11 @@
 #include <string.h>
 
 #include "doomtype.h"
+#include "doomdef.h"
 #include "doomstat.h"
 #include "m_argv.h"
 #include "r_state.h"
+#include "v_video.h"
 #include "p_local.h"
 #include "info.h"
 #include "g_parity.h"
@@ -152,14 +154,168 @@ int G_ParityEnabled(void)
     return M_CheckParm("-checkdemo") != 0;
 }
 
+// ---- frame hashing (software-renderer output, pre-SDL-blit) ----------------
+//
+// We hash the indexed 320x200 screens[0] byte-EXACT (no tolerance): it is the
+// deterministic software-renderer output, independent of SDL. Determinism
+// requires singletics (gametic == frame index), forced by D_DoomMain when
+// -framehash is set, plus sampling only outside the level-start melt wipe (the
+// wipe loop is driven by wall-clock I_GetTime).
+
+static const int frame_target_tics[] = { 40, 80, 120, 160 };
+#define NUM_FRAME_TARGETS ((int)(sizeof(frame_target_tics)/sizeof(frame_target_tics[0])))
+
+static unsigned long long frame_digest = FNV64_OFFSET;
+static int frame_captured = 0;
+static int frame_last_tic = -1;
+static int frame_min_distinct = 1 << 30;   // fewest distinct indices seen
+
+int G_ParityFrameHashEnabled(void)
+{
+    return M_CheckParm("-framehash") != 0;
+}
+
+static void G_ParityFrameDump(const char* path)
+{
+    // Write screens[0] as a binary PGM (indices as gray) for visual boot-smoke
+    // evidence -- structure is recognisable even without the palette applied.
+    FILE* f = fopen(path, "wb");
+    if (!f)
+        return;
+    fprintf(f, "P5\n%d %d\n255\n", SCREENWIDTH, SCREENHEIGHT);
+    fwrite(screens[0], 1, SCREENWIDTH * SCREENHEIGHT, f);
+    fclose(f);
+}
+
+void G_ParityFrameSample(int wipe_in_progress)
+{
+    int i;
+    const byte* fb;
+
+    if (!G_ParityFrameHashEnabled())
+        return;
+    if (wipe_in_progress)
+        return;
+    if (gamestate != GS_LEVEL || gametic == 0)
+        return;
+    if (gametic == frame_last_tic)
+        return;                 // one sample per tic
+    frame_last_tic = gametic;
+
+    for (i = 0; i < NUM_FRAME_TARGETS; i++)
+    {
+        int seen[256];
+        int distinct = 0;
+        int k, n;
+
+        if (gametic != frame_target_tics[i])
+            continue;
+
+        fb = screens[0];
+        n = SCREENWIDTH * SCREENHEIGHT;
+
+        // Boot-smoke guard: a real rendered frame has many distinct palette
+        // indices. A blank/stale buffer would have ~1 and must NOT pass green.
+        memset(seen, 0, sizeof(seen));
+        for (k = 0; k < n; k++)
+        {
+            if (!seen[fb[k]])
+            {
+                seen[fb[k]] = 1;
+                distinct++;
+            }
+        }
+        if (distinct < frame_min_distinct)
+            frame_min_distinct = distinct;
+
+        // Fold (gametic, full frame) into the rolling digest, in ascending
+        // tic order (guaranteed by singletics).
+        fnv = frame_digest;
+        h_u32((unsigned int)gametic);
+        for (k = 0; k < n; k++)
+            h_u8(fb[k]);
+        frame_digest = fnv;
+        frame_captured++;
+
+        // Optional visual dump of the last target frame.
+        {
+            int p = M_CheckParm("-framedump");
+            if (p && p < myargc - 1 && gametic == frame_target_tics[NUM_FRAME_TARGETS - 1])
+                G_ParityFrameDump(myargv[p + 1]);
+        }
+        break;
+    }
+}
+
+static void G_ParityFrameFinishAndExit(void)
+{
+    char got[32];
+    int p;
+
+    if (frame_captured != NUM_FRAME_TARGETS)
+    {
+        fprintf(stderr, "PARITY: framehash captured %d/%d target frames\n",
+                frame_captured, NUM_FRAME_TARGETS);
+        exit(4);
+    }
+
+    // Boot-smoke: refuse to bless a blank/stale framebuffer.
+    if (frame_min_distinct < 8)
+    {
+        fprintf(stderr, "PARITY: frame appears blank (min distinct indices %d)\n",
+                frame_min_distinct);
+        exit(5);
+    }
+    fprintf(stderr, "PARITY: frame non-blank (min distinct indices %d)\n",
+            frame_min_distinct);
+
+    snprintf(got, sizeof(got), "%016llx", frame_digest);
+    printf("PARITY_FRAMEHASH %s\n", got);
+    fflush(stdout);
+
+    p = M_CheckParm("-frameref");
+    if (p && p < myargc - 1)
+    {
+        FILE* f = fopen(myargv[p + 1], "r");
+        char ref[64];
+        if (!f)
+        {
+            fprintf(stderr, "PARITY: cannot open frameref %s\n", myargv[p + 1]);
+            exit(2);
+        }
+        ref[0] = '\0';
+        if (fscanf(f, "%63s", ref) != 1)
+        {
+            fprintf(stderr, "PARITY: empty frameref %s\n", myargv[p + 1]);
+            fclose(f);
+            exit(2);
+        }
+        fclose(f);
+        if (strcmp(ref, got) != 0)
+        {
+            fprintf(stderr, "PARITY: FRAME MISMATCH expected %s got %s\n",
+                    ref, got);
+            exit(3);
+        }
+        printf("PARITY: FRAME MATCH %s\n", got);
+        fflush(stdout);
+    }
+}
+
 void G_ParityCheckAndExit(void)
 {
     unsigned long long sum;
     char got[32];
     int p;
 
-    if (!G_ParityEnabled())
+    if (!G_ParityEnabled() && !G_ParityFrameHashEnabled())
         return;
+
+    if (G_ParityFrameHashEnabled())
+        G_ParityFrameFinishAndExit();
+
+    if (!G_ParityEnabled())
+        exit(0);
 
     sum = G_ParityChecksum();
     snprintf(got, sizeof(got), "%016llx", sum);

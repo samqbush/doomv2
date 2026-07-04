@@ -31,10 +31,12 @@ demonstrably met.
 | Build sound server (legacy) | `cd sndserv && make` |
 | Clean | `cd linuxdoom-1.10 && make clean` |
 | Build (modern, *introduced Phase 1*) | `cmake -B build && cmake --build build` |
-| Run / play | `./build/doom -iwad <path/to/IWAD>` *(exact flags set in Phase 2/3)* |
-| Run a demo (oracle) | `./build/doom -iwad <IWAD> -playdemo <demo.lmp>` |
-| Demo-parity test (*introduced Phase 2*) | `ctest -R demo-parity` *(compares end consistency checksum to the self-frozen master recorded by our own engine at Phase 2)* |
-| Frame-hash smoke (*introduced Phase 2*) | `ctest -R frame-smoke` |
+| Run / play | `DOOMWADDIR=<dir-with-doom1.wad> ./build/doom` *(IWAD is found by hard-coded filename via `DOOMWADDIR`, **not** `-iwad`; symlink `freedoom1.wad`→`doom1.wad`)* |
+| Run a demo (oracle) | copy `tests/fixtures/parity.lmp` into a rundir with `doom1.wad`, then `DOOMWADDIR=<rundir> HOME=<rundir> ./build/doom -playdemo parity` |
+| Demo-parity test (Phase 2 ✅) | `ctest --test-dir build -R demo-parity` *(replays scripted v110 demo, asserts self-frozen world-state checksum `a00552bbf22274a2`)* |
+| Frame-hash smoke (Phase 2 ✅) | `ctest --test-dir build -R frame-smoke` *(byte-exact indexed `screens[0]` hash `3e61b0f0c5dfd943` + non-blank guard)* |
+| Palette-LUT gate (Phase 2 ✅) | `ctest --test-dir build -R palette-lut` *(validates `I_SetPalette` index→ARGB8888 + gamma)* |
+| Demo-regen check (Phase 2 ✅) | `ctest --test-dir build -R demo-regen` *(asserts `tools/gen_demo.py` reproduces `parity.lmp` byte-exact)* |
 | Loopback net test (*introduced Phase 5*) | `ctest -R net-loopback` |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files from Phase 3) |
 

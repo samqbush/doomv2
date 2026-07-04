@@ -119,7 +119,7 @@ Testability Milestone at the end of Phase 2.** Phases 0–2 are therefore
 
 | Component | Target rung | Residual risk (named) | Closes at |
 |---|---|---|---|
-| Portable core | **L2 → L4** | Dark until Phase 2. Pre-testability safety = demo-replay golden master (L2) + tiny reversible commits (L1). Rises to L4 (full parity CI) once it boots. | Phase 3 |
+| Portable core | **L2 → L4** | Dark until Phase 2. **Reached L3 at Phase 2** (self-frozen demo-parity + exact frame-hash + palette-lut green under `ctest`). Residual: master is self-referential + demo-bounded coverage. Rises to L4 (full parity CI on Linux+macOS) in Phase 3. | Phase 3 |
 | SDL2 platform layer | **L1 → L3** | No pixel-exact test for a *new* backend; rely on frame-hash smoke + manual visual check until characterization harness exists. | Phase 4 |
 | Audio | **L1** | Audio correctness is perceptual; smoke checklist only. Low regression cost. | (accepted) |
 | Netcode | **L2** | Lockstep desync only reproducible with ≥2 peers; use recorded-demo consistency checksum as oracle. | Phase 5 |
@@ -404,14 +404,16 @@ audio/net still quarantined).
 | 2.1 | Implement SDL2 `i_video.c`: create window/renderer/texture; blit 320×200 8-bit `screens[0]` via palette → 32-bit texture | video | — |
 | 2.2 | Implement `i_system.c` timing on SDL (`I_GetTime` 35 Hz) + input events → DOOM keycodes | platform | 2.1 |
 | 2.3 | Wire WAD load + `-playdemo` path so a demo runs headless-ish to completion | core | 2.2 |
-| 2.4 | Add a **demo-parity test target**: run demo, compare end consistency checksum to Phase 0 reference | test | 2.3 |
-| 2.5 | Add a **frame-hash smoke**: hash N reference frames vs Phase 0 captures | test | 2.1 |
+| 2.4 | Add a **demo-parity test target**: run demo, compare end consistency checksum to the **self-frozen master** (recorded by our own v110 engine at the end of Phase 2 — see `docs/oracle/ORACLE_STRATEGY.md` Layer 3) | test | 2.3 |
+| 2.5 | Add a **frame-hash smoke**: byte-**exact** hash of N indexed `screens[0]` frames vs the self-frozen frame master | test | 2.1 |
 
 #### Risks & Mitigations
-- **Risk:** palette/gamma blit mismatch → **Mitigation:** frame-hash smoke with a
-  documented tolerance; visual diff on failure.
+- **Risk:** palette/gamma blit mismatch → **Mitigation:** dedicated **palette-lut**
+  gate asserting `I_SetPalette`'s exact index→ARGB8888 conversion (frame hashes
+  cover the indexed drawer only, not the SDL LUT).
 - **Risk:** input timing changes demo determinism → **Mitigation:** demo path
-  must bypass real-time input; drive from the LMP `ticcmd` stream only.
+  must bypass real-time input; drive from the LMP `ticcmd` stream only
+  (`-framehash` forces `singletics`; hashes sampled only outside active wipes).
 
 #### Decisions made
 - First slice = **`-playdemo` render-to-frame**, not interactive play
@@ -419,12 +421,26 @@ audio/net still quarantined).
   **deferred** to Phase 3. Audio = **deferred** to Phase 4 (game runs silent).
 
 #### Verification & Exit Criteria (Definition of Done)
-- [ ] **LIT criterion (now valid):** demo-parity target passes — reference demo
-      replays to the identical consistency checksum (the seam/oracle contract).
-- [ ] Frame-hash smoke passes within tolerance vs Phase 0 captures.
-- [ ] Binary boots, loads a real IWAD, and displays a frame (smoke checklist).
-- [ ] Residual risk named: audio (L1) and net (L2) still quarantined; closed in
-      Phases 4–5.
+- [x] **LIT criterion (now valid):** `ctest -R demo-parity` **green** — the
+      scripted v110 demo replays to the identical self-frozen canonical
+      world-state checksum (`a00552bbf22274a2`), via a clean `-checkdemo` exit
+      (exit 0 match / nonzero mismatch — never `I_Error`). Determinism preserved
+      across the stub→SDL platform swap.
+- [x] `ctest -R frame-smoke` **green** — byte-exact indexed `screens[0]` frame
+      hash (`3e61b0f0c5dfd943`) matches the frozen master; built-in non-blank
+      guard (≥8 distinct indices; observed 117) fails closed on a blank frame.
+- [x] `ctest -R palette-lut` **green** — `I_SetPalette` index→ARGB8888
+      conversion + gamma verified against PLAYPAL (256 entries).
+- [x] Binary boots, loads the SHA-pinned IWAD (presented as `doom1.wad`), and
+      renders a real frame — see boot-smoke evidence
+      `docs/oracle/phase2-boot-frame.png` (3D view, status bar, HUD pickup msg).
+- [x] Residual risk named: the golden master is **self-referential** (guarantees
+      self-consistency of later refactors, not first-boot correctness) and its
+      coverage is **bounded by the scripted demo** (see `tools/gen_demo.py`
+      coverage notes); real-window screenshot is infeasible in the headless dev
+      session (documented — boot-smoke uses the non-blank guard + committed
+      PGM/PNG); audio (stub, L1 → Phase 4) and net (stub → Phase 5) still
+      quarantined; Linux build unverified locally (Phase 3 CI).
 
 ---
 
@@ -543,7 +559,7 @@ regression cost).
 |---|---|
 | 0 — Oracle & baseline | ✅ complete (branch `phase-0-oracle-baseline`; see `docs/oracle/`) |
 | 1 — Compile 64-bit clean | ✅ complete (branch `phase-1-compile-64bit`; macOS clang 21 links `./build/doom`, zero 64-bit warnings; Linux deferred to Phase 3 CI) |
-| 2 — SDL beachhead (Testability Milestone) | ☐ pending |
+| 2 — SDL beachhead (Testability Milestone) | ✅ complete (branch `phase-2-sdl-beachhead`; SDL2 backend boots + renders, `ctest` demo-parity/frame-smoke/palette-lut green; core crossed Testability Milestone, rung L3) |
 | 3 — CI + interactive + L4 gate | ☐ pending |
 | 4 — SDL audio, retire sndserver | ☐ pending |
 | 5 — Portable netcode | ☐ pending |

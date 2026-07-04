@@ -48,8 +48,9 @@ cp "$DEMO" "$RUNDIR/parity.lmp"
 
 # HOME is redirected so the engine's ~/.doomrc write lands in the sandbox.
 # -nodraw: state parity needs the ticker, not the drawer (D_Display is skipped).
+# SDL_VIDEODRIVER=dummy keeps this headless on CI even if -nodraw is relaxed.
 set +e
-( cd "$RUNDIR" && DOOMWADDIR="$RUNDIR" HOME="$RUNDIR" \
+( cd "$RUNDIR" && SDL_VIDEODRIVER=dummy DOOMWADDIR="$RUNDIR" HOME="$RUNDIR" \
     "$DOOM_BIN" -playdemo parity -checkdemo -parityref "$REF" -nodraw \
     > "$RUNDIR/out.log" 2>&1 )
 RC=$?
