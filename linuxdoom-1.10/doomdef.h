@@ -81,7 +81,11 @@ typedef enum
 //  and unfinished. Default is synchronous.
 // Experimental asynchronous timer based is
 //  handled by SNDINTR. 
-#define SNDSERV  1
+// Phase 4 modernization: the separate sndserver process is retired in favor of
+// in-process SDL2 audio (platform/sdl/i_sound_sdl.c). SNDSERV is left undefined
+// so d_main.c calls I_UpdateSound() and the mixer runs in-process. SNDINTR
+// (async timer-driven mixing) stays off; output remains synchronous.
+//#define SNDSERV  1
 //#define SNDINTR  1
 
 

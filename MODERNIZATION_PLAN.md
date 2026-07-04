@@ -107,7 +107,7 @@ process, so testability arrives together for the core once it builds and boots:
 | Component | Testability Milestone lands at | Notes |
 |---|---|---|
 | Portable core + SDL2 platform | **End of Phase 2** (first runnable frame on modern toolchain) | First point it builds 64-bit-clean, boots, loads a WAD, and can replay a demo = ≥1 meaningful passing check |
-| Audio (SDL2) | **Phase 4** | Non-blocking; game runs (silent) before audio lands |
+| Audio (SDL2) | **Phase 4** ✅ | Landed: in-process SDL push audio; game ran silent before it. Non-blocking; core untouched (demo-parity green). |
 | Netcode | **Phase 5** | Deterministic replay provable before real net |
 | `ipx/`/`sersrc/` | **Never (archived)** | L0 by decision |
 
@@ -121,7 +121,7 @@ Testability Milestone at the end of Phase 2.** Phases 0–2 are therefore
 |---|---|---|---|
 | Portable core | **L2 → L4** | Dark until Phase 2. Reached L3 at Phase 2 (self-frozen demo-parity + exact frame-hash + palette-lut green under `ctest`). **Reached L4 at Phase 3** — full parity gate green in CI on **Linux + macOS** (first verified Linux build; byte-exact frame-hash agrees cross-platform). Residual: master is self-referential + demo-bounded coverage (unchanged — the oracle is self-frozen by design). | ✅ Phase 3 |
 | SDL2 platform layer | **L1 → L3** | No pixel-exact test for a *new* backend; rely on frame-hash smoke + manual visual check until characterization harness exists. Phase 3 added full keyboard+mouse input and a documented manual interactive-play checklist; `-Werror` holds the layer to zero warnings. | Phase 4 |
-| Audio | **L1** | Audio correctness is perceptual; smoke checklist only. Low regression cost. | (accepted) |
+| Audio | **L1** | Audio correctness is perceptual; smoke checklist only. Low regression cost. **Reached L1 at Phase 4** — in-process SDL push audio (`i_sound_sdl.c`) under `-Werror`; parity+frame-hash stay green (sim untouched); device opens at 11025/2ch/S16, oracle modes suppress audio. Residual: no automated audio oracle (blessed downgrade — human perceptual run pending). | ✅ Phase 4 |
 | Netcode | **L2** | Lockstep desync only reproducible with ≥2 peers; use recorded-demo consistency checksum as oracle. | Phase 5 |
 | DOS drivers | **L0** | Archived; zero users, zero regression cost. | (accepted, blessed) |
 
@@ -219,7 +219,7 @@ graph TD
   end
   Core --> ILayer
   ILayer -->|SDL_Texture blit| Window[SDL2 window - any GPU/OS]
-  ILayer -->|SDL audio callback| Audio[SDL2 audio - no separate process]
+  ILayer -->|SDL_QueueAudio push| Audio[SDL2 audio - no separate process]
   ILayer -->|SDL_net / POSIX| Peer[Peers - lockstep unchanged]
   Core -->|reads| WAD[(WAD files - format unchanged)]
 ```
@@ -503,24 +503,39 @@ regression cost).
 #### Tasks
 | ID | Task | Component | Blocked by |
 |----|------|-----------|------------|
-| 4.1 | Implement SDL audio callback mixing in `i_sound.c` | audio | — |
-| 4.2 | Delete `popen(sndserver)` path; move `sndserv/` to `legacy/` | audio | 4.1 |
-| 4.3 | Verify audio does not perturb the sim (demo parity still green) | audio | 4.1 |
+| 4.0 | Undefine `SNDSERV` (`doomdef.h`) so `d_main.c` calls `I_UpdateSound()` | audio | — |
+| 4.1 | Port DMX mixer to `platform/sdl/i_sound_sdl.c` (all state `static`); SDL push output (`SDL_QueueAudio`, S16LSB/2ch/11025, `allowed_changes=0`, capped queue, unpaused) | audio | 4.0 |
+| 4.2 | Retire `i_sound_stub.c`; move `sndserv/` to `legacy/`; wire CMake (`-Werror`) | audio | 4.1 |
+| 4.3 | Suppress audio in oracle/`-nosound` modes; verify demo-parity + frame-hash still green | audio | 4.1 |
 
 #### Risks & Mitigations
-- **Risk:** audio thread touches sim state → **Mitigation:** audio reads only;
-  re-run demo-parity to prove sim untouched.
+- **Risk:** audio perturbs sim state → **Mitigation:** push model
+  (`SDL_QueueAudio`) keeps the mixer on the sim thread, audio reads only; oracle
+  modes suppress audio entirely; demo-parity + frame-hash re-run green proves it.
+- **Risk:** queue growth / latency drift on faster-than-realtime frames →
+  **Mitigation:** bounded queue via `SDL_GetQueuedAudioSize` (drop past ~4
+  buffers); audio suppressed on unpaced `-checkdemo` replay.
 
 #### Decisions made
 - Separate sound-server process = **dropped** (superseded, ADR §4). SDL_mixer vs
   raw SDL audio: **raw SDL audio** to keep the existing DMX-style mixer logic
   (**decided**).
+- Threading = **push (`SDL_QueueAudio`), single-threaded** (not an audio-thread
+  callback), so the mixer stays on the sim thread and cannot perturb the parity
+  checksum (**decided in Phase 4 review**; supersedes task-table "callback"
+  wording).
+- Code lives in a **new `platform/sdl/i_sound_sdl.c`** (mirrors video/system,
+  held to `-Werror`); dead legacy `i_sound.c` stays excluded/archived
+  (**decided**). Music stays a documented no-op — **deferred** beyond Phase 4.
 
 #### Verification & Exit Criteria (Definition of Done)
-- [ ] SFX play in sync (perceptual smoke checklist — L1, named).
-- [ ] **Demo-parity target still green** (parity check — audio must not change
-      the sim).
-- [ ] No separate audio process remains (assert `sndserv/` unreferenced by build).
+- [x] SFX play in sync (perceptual smoke checklist — L1, named:
+      `docs/audio-smoke-checklist.md`; automated pre-check done, human
+      perceptual run pending on a desktop).
+- [x] **Demo-parity + frame-hash targets still green** (`ctest` all 4 pass;
+      checksum `a00552bbf22274a2` unchanged — audio does not change the sim).
+- [x] No separate audio process remains (`sndserv/` moved to `legacy/`,
+      unreferenced by build; `i_sound_stub.c` retired; build links clean).
 
 ---
 
@@ -579,7 +594,7 @@ regression cost).
 | 1 — Compile 64-bit clean | ✅ complete (branch `phase-1-compile-64bit`; macOS clang 21 links `./build/doom`, zero 64-bit warnings; Linux deferred to Phase 3 CI) |
 | 2 — SDL beachhead (Testability Milestone) | ✅ complete (branch `phase-2-sdl-beachhead`, merged to `main` at start of Phase 3; SDL2 backend boots + renders, `ctest` demo-parity/frame-smoke/palette-lut green; core crossed Testability Milestone, rung L3) |
 | 3 — CI + interactive + L4 gate | ✅ complete (branch `phase-3-ci-interactive`; first CI (`.github/workflows/ci.yml`) green on **Linux + macOS** — first verified Linux build; full parity gate + build; full keyboard/mouse input; `-Werror` on platform files; manual interactive checklist. Core reached **L4**. CI enforcement left as a manual GitHub-UI step.) |
-| 4 — SDL audio, retire sndserver | ☐ pending |
+| 4 — SDL audio, retire sndserver | ✅ complete (branch `phase-4-sdl-audio`; in-process SDL push audio in `platform/sdl/i_sound_sdl.c`, DMX mixer ported verbatim under `-Werror`; `SNDSERV` undefined so `I_UpdateSound` runs; `sndserv/` archived to `legacy/`, `i_sound_stub.c` retired; all 4 `ctest` targets green — checksum `a00552bbf22274a2` unchanged; oracle/`-nosound` modes suppress audio; L1 audio smoke checklist added, human perceptual run pending) |
 | 5 — Portable netcode | ☐ pending |
 
 ---

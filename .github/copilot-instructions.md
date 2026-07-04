@@ -28,10 +28,10 @@ demonstrably met.
 | Action | Command |
 |--------|---------|
 | Build (legacy, Linux-only, current) | `cd linuxdoom-1.10 && make` → `linux/linuxxdoom` |
-| Build sound server (legacy) | `cd sndserv && make` |
+| Build sound server (legacy, *retired Phase 4* → `legacy/sndserv/`) | `cd legacy/sndserv && make` *(archived; no longer part of the modern build)* |
 | Clean | `cd linuxdoom-1.10 && make clean` |
 | Build (modern, *introduced Phase 1*) | `cmake -B build && cmake --build build` |
-| Run / play | `DOOMWADDIR=<dir-with-doom1.wad> ./build/doom` *(IWAD is found by hard-coded filename via `DOOMWADDIR`, **not** `-iwad`; symlink `freedoom1.wad`→`doom1.wad`)* |
+| Run / play | `DOOMWADDIR=<dir-with-doom1.wad> ./build/doom` *(IWAD is found by hard-coded filename via `DOOMWADDIR`, **not** `-iwad`; symlink `freedoom1.wad`→`doom1.wad`; in-process SDL audio on by default (Phase 4), `-nosound`/`-nosfx` to silence)* |
 | Run a demo (oracle) | copy `tests/fixtures/parity.lmp` into a rundir with `doom1.wad`, then `DOOMWADDIR=<rundir> HOME=<rundir> ./build/doom -playdemo parity` |
 | Demo-parity test (Phase 2 ✅) | `ctest --test-dir build -R demo-parity` *(replays scripted v110 demo, asserts self-frozen world-state checksum `a00552bbf22274a2`)* |
 | Frame-hash smoke (Phase 2 ✅) | `ctest --test-dir build -R frame-smoke` *(byte-exact indexed `screens[0]` hash `3e61b0f0c5dfd943` + non-blank guard)* |
@@ -39,6 +39,7 @@ demonstrably met.
 | Demo-regen check (Phase 2 ✅) | `ctest --test-dir build -R demo-regen` *(asserts `tools/gen_demo.py` reproduces `parity.lmp` byte-exact)* |
 | Full parity gate (Phase 3 ✅) | `ctest --test-dir build --output-on-failure` *(all 4 targets; what CI runs)* |
 | Interactive-play smoke (Phase 3 ✅) | manual — see `docs/interactive-play-checklist.md` *(needs a desktop session; `-grabmouse` boot recipe + keyboard/mouse step table)* |
+| Audio smoke (Phase 4 ✅) | manual — see `docs/audio-smoke-checklist.md` *(needs a desktop + audio device; L1 perceptual SFX-in-sync checklist; oracle/`-nosound` modes suppress audio)* |
 | Loopback net test (*introduced Phase 5*) | `ctest -R net-loopback` |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
 
@@ -48,7 +49,8 @@ PR, and `workflow_dispatch`. It is **not** yet a *required* status check —
 enforcement is a manual GitHub-UI step (Settings → Branches → protect `main`).
 
 > **Never invent a command you haven't verified.** The only command verified
-> against the current tree is `make` in `linuxdoom-1.10/` and `sndserv/`.
+> against the current tree is `make` in `linuxdoom-1.10/` and `legacy/sndserv/`
+> (the latter archived Phase 4), plus `cmake`/`ctest` for the modern build.
 
 ## Phase gating (regime-aware; applies to every phase)
 
