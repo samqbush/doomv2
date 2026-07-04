@@ -50,6 +50,10 @@ void I_WaitVBL(int count);
 
 void I_ReadScreen (byte* scr);
 
+// Phase 2 palette-LUT gate: validate I_SetPalette's index->ARGB conversion.
+// Returns 0 on pass, nonzero on mismatch. (Implemented by the SDL backend.)
+int I_PaletteSelfTest (void);
+
 void I_BeginRead (void);
 void I_EndRead (void);
 
