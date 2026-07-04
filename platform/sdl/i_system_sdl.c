@@ -46,7 +46,9 @@ static boolean	mouse_grab_checked = false;
 void I_Tactile(int on, int off, int total)
 {
     // UNUSED.
-    on = off = total = 0;
+    (void)on;
+    (void)off;
+    (void)total;
 }
 
 ticcmd_t	emptycmd;

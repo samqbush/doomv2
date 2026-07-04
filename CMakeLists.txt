@@ -68,6 +68,13 @@ if(HAVE_WSHORTEN_64_TO_32)
   target_compile_options(doom PRIVATE -Wshorten-64-to-32)
 endif()
 
+# Phase 3: -Werror on the PLATFORM files only (SDL layer + active stubs). These
+# are new, modern code we own -- hold them to a zero-warning bar. The legacy
+# core stays warn-only (still noisy; promoting it is deferred). Applied per
+# source file so the core glob is unaffected.
+set_source_files_properties(${SDL_SOURCES} ${STUB_SOURCES}
+  PROPERTIES COMPILE_OPTIONS "-Werror")
+
 target_link_libraries(doom m SDL2::SDL2)
 
 #
