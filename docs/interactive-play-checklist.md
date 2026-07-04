@@ -56,5 +56,19 @@ Fill in when run:
 - Overall result (all steps pass?):
 - Notes / anomalies:
 
+### Automated pre-check (dev session, no display)
+
+The visual steps above require a real windowing session. In a headless dev
+session the following were verified as a proxy (they exercise the boot +
+mouse-grab code paths and prove determinism is untouched):
+
+- Clean build on macOS/AppleClang; all 4 ctest targets green.
+- `-grabmouse -noblit` boot under `SDL_VIDEODRIVER=dummy`: video subsystem
+  inits, `SDL_SetRelativeMouseMode` is attempted and its failure under the
+  dummy driver is non-fatal, the demo replays, and the world-state checksum
+  still `PARITY: MATCH a00552bbf22274a2`.
+
+The interactive table (steps 1–11) still needs a human on a desktop.
+
 A screenshot of step 2 (a loaded level) is encouraged; drop it next to
 `docs/oracle/phase2-boot-frame.png` and reference it here.
