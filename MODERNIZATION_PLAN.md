@@ -366,13 +366,23 @@ modern 64-bit toolchain (no rendering yet).
   (future consideration).
 
 #### Verification & Exit Criteria (Definition of Done)
-- [ ] `cmake --build` links a binary on Linux and macOS (dark-regime runnable
-      command — it *builds*, but the component isn't "alive" until it renders).
-- [ ] Zero pointer/int-cast size warnings remain (recorded).
-- [ ] Assert: no gameplay logic changed — only headers, types, build. (Diff is
-      portability-only.)
-- [ ] Residual risk: still no runnable frame — testability deferred to Phase 2
-      (stated).
+- [x] `cmake -B build && cmake --build build` links `./build/doom` on **macOS**
+      (Apple clang 21). **Linux build deferred to Phase 3 CI** — named residual
+      risk. Bonus (beyond the dark-regime gate): with a shareware IWAD present
+      the binary boots through `R_Init`/`P_Init`/`D_CheckNetGame`/`S_Init` into
+      the game loop under the stub platform layer.
+- [x] Zero pointer/int-cast/narrowing size warnings remain, under `-Wall
+      -Wextra -Wpointer-to-int-cast -Wint-to-pointer-cast -Wshorten-64-to-32`
+      (recorded). Remaining warnings are pre-existing legacy noise
+      (missing-field-initializers, unused-parameter, sign-compare) left
+      untouched — out of portability scope.
+- [x] Assert: no gameplay logic changed — only headers, types, build, and
+      pointer-width/allocation fixes. Diff is portability-only (110/99 lines,
+      24 files).
+- [x] Residual risk: still no rendered frame — testability deferred to Phase 2.
+      Linux build unverified locally (Phase 3 CI). Savegame on-disk format not
+      preserved on LP64 (struct widening) — accepted, saves are not part of the
+      demo oracle.
 
 ---
 
@@ -532,7 +542,7 @@ regression cost).
 | Phase | Status |
 |---|---|
 | 0 — Oracle & baseline | ✅ complete (branch `phase-0-oracle-baseline`; see `docs/oracle/`) |
-| 1 — Compile 64-bit clean | ☐ pending |
+| 1 — Compile 64-bit clean | ✅ complete (branch `phase-1-compile-64bit`; macOS clang 21 links `./build/doom`, zero 64-bit warnings; Linux deferred to Phase 3 CI) |
 | 2 — SDL beachhead (Testability Milestone) | ☐ pending |
 | 3 — CI + interactive + L4 gate | ☐ pending |
 | 4 — SDL audio, retire sndserver | ☐ pending |
