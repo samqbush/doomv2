@@ -390,7 +390,8 @@ static int    script_loaded = 0;
 
 int G_NetScriptEnabled(void)
 {
-    return M_CheckParm("-scriptcmds") != 0;
+    int p = M_CheckParm("-scriptcmds");
+    return (p != 0 && p < myargc - 1);
 }
 
 static void G_NetScriptLoad(void)
@@ -420,6 +421,12 @@ static void G_NetScriptLoad(void)
         exit(2);
     }
     script_buf = malloc((size_t)n ? (size_t)n : 1);
+    if (!script_buf)
+    {
+        fprintf(stderr, "PARITY: out of memory loading scriptcmds %s\n", myargv[p + 1]);
+        fclose(f);
+        exit(2);
+    }
     if (n && fread(script_buf, 1, (size_t)n, f) != (size_t)n)
     {
         fprintf(stderr, "PARITY: short read on scriptcmds %s\n", myargv[p + 1]);
@@ -470,6 +477,12 @@ void G_ParityExitTicCheck(void)
     if (!p || p >= myargc - 1)
         return;
     target = atoi(myargv[p + 1]);
+    if (target <= 0)
+    {
+        fprintf(stderr, "PARITY: -exittic requires a positive integer, got '%s'\n",
+                myargv[p + 1]);
+        exit(2);
+    }
     if (gametic >= target)
         G_ParityCheckAndExit();
 }

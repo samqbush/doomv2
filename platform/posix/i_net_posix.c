@@ -280,7 +280,8 @@ static void ResolvePeer (const char* spec, struct sockaddr_in* out)
     if (host[0] == '.')
     {
 	// Legacy shorthand: ".1.2.3.4" is a raw dotted IP.
-	out->sin_addr.s_addr = inet_addr (host + 1);
+	if (inet_pton (AF_INET, host + 1, &out->sin_addr) != 1)
+	    I_Error ("I_InitNetwork: bad dotted IP in '%s'", spec);
     }
     else
     {
@@ -356,13 +357,22 @@ void I_InitNetwork (void)
     netgame = true;
 
     // parse player number and host list
-    doomcom->consoleplayer = myargv[i+1][0]-'1';
+    if (i >= myargc - 1)
+	I_Error ("I_InitNetwork: -net requires <consoleplayer> <host> ...");
+
+    p = myargv[i+1][0] - '1';
+    if (p < 0 || p >= MAXPLAYERS)
+	I_Error ("I_InitNetwork: bad -net consoleplayer '%s'", myargv[i+1]);
+    doomcom->consoleplayer = p;
 
     doomcom->numnodes = 1;	// this node for sure
 
     i++;
     while (++i < myargc && myargv[i][0] != '-')
     {
+	if (doomcom->numnodes >= MAXNETNODES)
+	    I_Error ("I_InitNetwork: too many -net hosts (max %d)",
+		     MAXNETNODES);
 	ResolvePeer (myargv[i], &sendaddress[doomcom->numnodes]);
 	doomcom->numnodes++;
     }
