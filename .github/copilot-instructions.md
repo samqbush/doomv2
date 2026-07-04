@@ -37,12 +37,15 @@ demonstrably met.
 | Frame-hash smoke (Phase 2 ✅) | `ctest --test-dir build -R frame-smoke` *(byte-exact indexed `screens[0]` hash `3e61b0f0c5dfd943` + non-blank guard)* |
 | Palette-LUT gate (Phase 2 ✅) | `ctest --test-dir build -R palette-lut` *(validates `I_SetPalette` index→ARGB8888 + gamma)* |
 | Demo-regen check (Phase 2 ✅) | `ctest --test-dir build -R demo-regen` *(asserts `tools/gen_demo.py` reproduces `parity.lmp` byte-exact)* |
+| Full parity gate (Phase 3 ✅) | `ctest --test-dir build --output-on-failure` *(all 4 targets; what CI runs)* |
+| Interactive-play smoke (Phase 3 ✅) | manual — see `docs/interactive-play-checklist.md` *(needs a desktop session; `-grabmouse` boot recipe + keyboard/mouse step table)* |
 | Loopback net test (*introduced Phase 5*) | `ctest -R net-loopback` |
-| Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files from Phase 3) |
+| Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
 
-CI (`.github/workflows/*` — *introduced Phase 3*) builds on Linux + macOS and runs
-`build → demo-parity → frame-smoke` on every push and PR. There is **no CI
-today**.
+CI (`.github/workflows/ci.yml`, Phase 3 ✅) builds on **Linux + macOS** and runs
+`build → ctest` (the full 4-target parity gate) on every push to `main`, every
+PR, and `workflow_dispatch`. It is **not** yet a *required* status check —
+enforcement is a manual GitHub-UI step (Settings → Branches → protect `main`).
 
 > **Never invent a command you haven't verified.** The only command verified
 > against the current tree is `make` in `linuxdoom-1.10/` and `sndserv/`.
@@ -108,9 +111,11 @@ assuming it passed.
 ## Branching & PRs
 
 Each phase is developed on its **own branch** — never commit phase work directly
-to `master`. Create a branch at the start of a phase (e.g. `phase-2-sdl-
-beachhead`). Once exit criteria are met and recorded, push and open a PR to
-`master`. For **lit** phases, green CI on the PR is the authoritative signal
-before merge. For **dark** phases (0, 1, Phase 2 entry), the PR instead carries
-the achievable rung's evidence — captured demo checksum / frame hashes,
-CMake-builds-clean, smoke-checklist results — with residual risk named.
+to `main`. Create a branch at the start of a phase (e.g.
+`phase-3-ci-interactive`). Once exit criteria are met and recorded, push and
+open a PR to **`main`** (the default branch). For **lit** phases, green CI on the
+PR is the authoritative signal before merge. For **dark** phases (0, 1, Phase 2
+entry), the PR instead carries the achievable rung's evidence — captured demo
+checksum / frame hashes, CMake-builds-clean, smoke-checklist results — with
+residual risk named. *(CI runs on PRs but is not yet a required status check —
+enforcing it on `main` is a manual GitHub-UI step.)*
