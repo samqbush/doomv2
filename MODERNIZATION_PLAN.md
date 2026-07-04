@@ -529,7 +529,7 @@ regression cost).
   (**decided**). Music stays a documented no-op — **deferred** beyond Phase 4.
 
 #### Verification & Exit Criteria (Definition of Done)
-- [x] SFX play in sync (perceptual smoke checklist — L1, named:
+- [ ] SFX play in sync (perceptual smoke checklist — L1, named:
       `docs/audio-smoke-checklist.md`; automated pre-check done, human
       perceptual run pending on a desktop).
 - [x] **Demo-parity + frame-hash targets still green** (`ctest` all 4 pass;

@@ -314,14 +314,35 @@ I_StartSound
 
 void I_StopSound (int handle)
 {
-  // Unused in the original mixer (handle-based stop was never implemented).
-  (void)handle;
+    // Find the mixer channel carrying this handle and silence it so distance
+    // clipping / explicit stops actually stop playback (the internal mixer
+    // frees a channel by zeroing its data pointer).
+    int i;
+
+    for (i = 0; i < NUM_CHANNELS; i++)
+    {
+	if (channels[i] && channelhandles[i] == handle)
+	{
+	    channels[i] = 0;
+	    break;
+	}
+    }
 }
 
 
 int I_SoundIsPlaying(int handle)
 {
-    return gametic < handle;
+    // A handle is still playing only while its mixer channel is active
+    // (non-NULL data pointer). I_UpdateSound zeroes channels[i] on completion.
+    int i;
+
+    for (i = 0; i < NUM_CHANNELS; i++)
+    {
+	if (channels[i] && channelhandles[i] == handle)
+	    return 1;
+    }
+
+    return 0;
 }
 
 
@@ -495,7 +516,7 @@ I_InitSound()
     else
     {
       S_sfx[i].data = S_sfx[i].link->data;
-      lengths[i] = lengths[(S_sfx[i].link - S_sfx)/sizeof(sfxinfo_t)];
+      lengths[i] = lengths[S_sfx[i].link - S_sfx];
     }
   }
 
