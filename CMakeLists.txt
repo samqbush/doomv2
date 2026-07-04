@@ -9,9 +9,9 @@ project(doom C)
 # engine boots, renders, and replays a demo to a frozen parity checksum.
 #
 # The dead X11/OSS/BSD platform sources (i_video.c, i_sound.c, i_net.c,
-# i_system.c) are excluded from the core glob. Video + system are provided by
-# platform/sdl/; sound + net remain no-op stubs under platform/stub/ until
-# Phases 4/5. The originals are kept untouched for reference.
+# i_system.c) are excluded from the core glob. Video, system, and (Phase 4)
+# in-process audio are provided by platform/sdl/; net remains a no-op stub under
+# platform/stub/ until Phase 5. The originals are kept untouched for reference.
 #
 
 set(CMAKE_C_STANDARD 11)
@@ -28,15 +28,15 @@ list(REMOVE_ITEM CORE_SOURCES
   ${LEGACY_DIR}/i_system.c)
 
 set(STUB_SOURCES
-  ${CMAKE_SOURCE_DIR}/platform/stub/i_sound_stub.c
   ${CMAKE_SOURCE_DIR}/platform/stub/i_net_stub.c)
 
 # Phase 2 SDL2 platform layer: real video (blit) + system (timing/input).
-# Audio (i_sound) and net (i_net) stay stubbed until Phases 4/5.
+# Phase 4 adds in-process SDL audio (i_sound). Net stays stubbed until Phase 5.
 find_package(SDL2 REQUIRED)
 set(SDL_SOURCES
   ${CMAKE_SOURCE_DIR}/platform/sdl/i_video_sdl.c
-  ${CMAKE_SOURCE_DIR}/platform/sdl/i_system_sdl.c)
+  ${CMAKE_SOURCE_DIR}/platform/sdl/i_system_sdl.c
+  ${CMAKE_SOURCE_DIR}/platform/sdl/i_sound_sdl.c)
 
 # Phase 2 demo-parity oracle instrumentation (inert unless -checkdemo).
 set(PARITY_SOURCES
