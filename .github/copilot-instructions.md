@@ -33,7 +33,7 @@ demonstrably met.
 | Build (modern, *introduced Phase 1*) | `cmake -B build && cmake --build build` |
 | Run / play | `./build/doom -iwad <path/to/IWAD>` *(exact flags set in Phase 2/3)* |
 | Run a demo (oracle) | `./build/doom -iwad <IWAD> -playdemo <demo.lmp>` |
-| Demo-parity test (*introduced Phase 2*) | `ctest -R demo-parity` *(compares end consistency checksum to Phase 0 reference)* |
+| Demo-parity test (*introduced Phase 2*) | `ctest -R demo-parity` *(compares end consistency checksum to the self-frozen master recorded by our own engine at Phase 2)* |
 | Frame-hash smoke (*introduced Phase 2*) | `ctest -R frame-smoke` |
 | Loopback net test (*introduced Phase 5*) | `ctest -R net-loopback` |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files from Phase 3) |
@@ -78,6 +78,18 @@ assuming it passed.
 
 ## Decisions
 
+- **No external source port — build the oracle with what we have.** Treat this as
+  if **no ported/modern DOOM exists** (no Chocolate Doom, Crispy, PrBoom, DSDA,
+  etc.): do **not** install, run, or borrow demos/frames/checksums from any
+  external reimplementation, and do **not** stand up a period-correct legacy
+  binary. The correctness oracle is layered and fully self-contained
+  (`docs/oracle/ORACLE_STRATEGY.md`): **(L1)** static seam/data contracts captured
+  in Phase 0 from the WAD bytes + source, and **(L3)** a **self-frozen** golden
+  master — our *own* engine records a native demo via `-record` at the end of
+  Phase 2, and its consistency checksum + frame hashes become the reference every
+  later lit phase diffs against. The residual risk (the *initial* port can't be
+  independently blessed, only self-consistency of later refactors) is named and
+  accepted — do not "fix" it by reaching for an external port.
 - When a phase is planned, **all sub-decisions are resolved and documented** in
   `MODERNIZATION_PLAN.md` so implementation needs no further user input.
 - State **"dropped" vs "deferred"** explicitly. Already decided: language stays

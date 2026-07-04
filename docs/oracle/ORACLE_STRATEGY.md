@@ -48,6 +48,14 @@ end-of-demo **consistency checksum** + a few **frame hashes** and freeze them as
 the **provisional golden master**. Every later *lit* phase diffs against it
 (`ctest -R demo-parity`, `ctest -R frame-smoke`).
 
+> **"Recorded" = by our own engine, never an external port.** DOOM records demos
+> natively (`-record` → `G_BeginRecording`/`G_WriteDemoTiccmd` in
+> `linuxdoom-1.10/g_game.c`), so the reference demo is produced *by the exact
+> binary we are building in Phases 1–2*. We do **not** install, run, or borrow a
+> demo from Chocolate Doom or any other reimplementation. The oracle is
+> self-referential *by design* — that is the whole point of the "no external
+> port" decision.
+
 **Named, accepted residual risk:** with no independent reference, the *initial*
 port cannot be behaviorally blessed — Layer 3 only guarantees **self-consistency
 of all subsequent refactors**, not first-boot correctness. Layer 1 partially
@@ -64,9 +72,10 @@ are **version 109** (vanilla 1.9), but this engine's `VERSION` is **110**
 
 - No demo can be replayed or checksummed in Phase 0 — there is nothing to run and
   nothing that would be accepted even if we could run it.
-- The **demo-parity seed is deferred to Phase 2**, where we will **record a fresh
-  demo** against the modernized engine (a native version-110 demo) and freeze it
-  as the Layer-3 master.
+- The **demo-parity seed is deferred to Phase 2**, where **our own modernized
+  engine** records a fresh demo natively via `-record` (a version-110 demo it
+  writes itself — *not* sourced from any external port) and freezes it as the
+  Layer-3 master.
 - Because a single bundled demo also under-exercises the engine, Phase 2/3 should
   seed a **small deterministic suite** (title loop, E1M1-style gameplay for N
   tics, doors/lifts/platforms, enemy/projectile interaction, item pickup,
