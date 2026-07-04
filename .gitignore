@@ -1,0 +1,10 @@
+# CMake out-of-tree build
+/build/
+
+# Legacy make artifacts
+linuxdoom-1.10/linux/
+sndserv/linux/
+*.o
+
+# Editor / OS noise
+.DS_Store
