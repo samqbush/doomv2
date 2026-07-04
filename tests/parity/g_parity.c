@@ -15,6 +15,7 @@
 #include "doomtype.h"
 #include "doomdef.h"
 #include "doomstat.h"
+#include "d_ticcmd.h"
 #include "m_argv.h"
 #include "r_state.h"
 #include "v_video.h"
@@ -100,7 +101,14 @@ static void h_player(player_t* pl)
         h_u32(0xffffffffu);
 }
 
-static unsigned long long G_ParityChecksum(void)
+// prndindex is the *playsim* RNG cursor (P_Random); rndindex is the *cosmetic*
+// RNG cursor (M_Random -- sound pitch, status-bar face, menu). See
+// m_random.c: P_Random advances prndindex, M_Random advances rndindex. Only
+// prndindex is deterministic across lockstep nodes; rndindex depends on the
+// listener (consoleplayer) because sound pitch/rejection is distance-gated.
+extern int prndindex;
+
+static unsigned long long G_ParityChecksumEx(int netmode)
 {
     thinker_t* th;
     int i;
@@ -112,8 +120,15 @@ static unsigned long long G_ParityChecksum(void)
     h_u32((unsigned int)gamemap);
     h_u32((unsigned int)gametic);
     h_u32((unsigned int)leveltime);
-    // RNG cursor: any divergence in RNG consumption shifts this.
-    h_u32((unsigned int)rndindex);
+    // RNG cursor. In single-player demo mode (Phase 2) we hash the historical
+    // rndindex to preserve the frozen master. In netgame loopback mode we hash
+    // the PLAYSIM cursor (prndindex) instead and deliberately omit rndindex,
+    // which legitimately diverges per node (listener-dependent sound pitch) and
+    // is cosmetic -- never fed back into the playsim.
+    if (netmode)
+        h_u32((unsigned int)prndindex);
+    else
+        h_u32((unsigned int)rndindex);
 
     // Players, in fixed slot order.
     for (i = 0; i < MAXPLAYERS; i++)
@@ -317,7 +332,7 @@ void G_ParityCheckAndExit(void)
     if (!G_ParityEnabled())
         exit(0);
 
-    sum = G_ParityChecksum();
+    sum = G_ParityChecksumEx(G_NetScriptEnabled());
     snprintf(got, sizeof(got), "%016llx", sum);
     printf("PARITY_CHECKSUM %s\n", got);
     fflush(stdout);
@@ -351,3 +366,111 @@ void G_ParityCheckAndExit(void)
 
     exit(0);
 }
+
+// ---- Phase 5: deterministic netgame scripted input + fixed-tic exit --------
+//
+// A netgame cannot use -playdemo (demos are single-player), so the loopback
+// consistency test drives each node's LOCAL player from a scripted ticcmd
+// stream and stops both nodes at a fixed gametic to emit the world-state
+// checksum. Both are pure test instrumentation, inert unless their flags are
+// passed, so normal play and the Phase 2 demo-parity checksum are unchanged.
+//
+// Script file format (raw bytes, 4 per tic, matching the demo tic encoding in
+// g_game.c G_ReadDemoTiccmd):
+//     forwardmove (signed char), sidemove (signed char),
+//     angleturn>>8 (byte, stored value used directly),
+//     buttons (byte)
+// The stream is consumed one entry per G_BuildTiccmd call; past the end the
+// local player idles (all zeros).
+
+static byte*  script_buf = NULL;
+static long   script_len = 0;
+static long   script_cursor = 0;
+static int    script_loaded = 0;
+
+int G_NetScriptEnabled(void)
+{
+    return M_CheckParm("-scriptcmds") != 0;
+}
+
+static void G_NetScriptLoad(void)
+{
+    int   p;
+    FILE* f;
+    long  n;
+
+    script_loaded = 1;
+    p = M_CheckParm("-scriptcmds");
+    if (!p || p >= myargc - 1)
+        return;
+
+    f = fopen(myargv[p + 1], "rb");
+    if (!f)
+    {
+        fprintf(stderr, "PARITY: cannot open scriptcmds %s\n", myargv[p + 1]);
+        exit(2);
+    }
+    fseek(f, 0, SEEK_END);
+    n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n < 0)
+    {
+        fprintf(stderr, "PARITY: bad scriptcmds %s\n", myargv[p + 1]);
+        fclose(f);
+        exit(2);
+    }
+    script_buf = malloc((size_t)n ? (size_t)n : 1);
+    if (n && fread(script_buf, 1, (size_t)n, f) != (size_t)n)
+    {
+        fprintf(stderr, "PARITY: short read on scriptcmds %s\n", myargv[p + 1]);
+        fclose(f);
+        exit(2);
+    }
+    fclose(f);
+    script_len = n;
+}
+
+// Overwrite ONLY the local player's control fields from the script. The
+// caller (G_BuildTiccmd) has already set cmd->consistancy from the local
+// consistency ring; we deliberately leave it untouched so G_Ticker's
+// cross-node consistency check remains a real transport test.
+void G_NetScriptApply(ticcmd_t* cmd)
+{
+    if (!script_loaded)
+        G_NetScriptLoad();
+
+    if (script_cursor + 4 <= script_len)
+    {
+        cmd->forwardmove = (signed char)script_buf[script_cursor + 0];
+        cmd->sidemove    = (signed char)script_buf[script_cursor + 1];
+        cmd->angleturn   = (short)(((unsigned char)script_buf[script_cursor + 2]) << 8);
+        cmd->buttons     = (byte)script_buf[script_cursor + 3];
+    }
+    else
+    {
+        cmd->forwardmove = 0;
+        cmd->sidemove    = 0;
+        cmd->angleturn   = 0;
+        cmd->buttons     = 0;
+    }
+    cmd->chatchar = 0;
+    script_cursor += 4;
+}
+
+// Called from TryRunTics immediately after a completed game tic (gametic has
+// just been incremented). When gametic reaches the -exittic target, emit the
+// world-state checksum and exit -- the one deterministic, per-node-identical
+// point at which both lockstep nodes hold the same state. Inert unless
+// -exittic was passed.
+void G_ParityExitTicCheck(void)
+{
+    int p = M_CheckParm("-exittic");
+    int target;
+
+    if (!p || p >= myargc - 1)
+        return;
+    target = atoi(myargv[p + 1]);
+    if (gametic >= target)
+        G_ParityCheckAndExit();
+}
+

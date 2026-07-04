@@ -33,6 +33,7 @@ static const char rcsid[] = "$Id: d_net.c,v 1.3 1997/02/03 22:01:47 b1 Exp $";
 #include "g_game.h"
 #include "doomdef.h"
 #include "doomstat.h"
+#include "g_parity.h"
 
 #define	NCMD_EXIT		0x80000000
 #define	NCMD_RETRANSMIT		0x40000000
@@ -744,6 +745,11 @@ void TryRunTics (void)
 	    M_Ticker ();
 	    G_Ticker ();
 	    gametic++;
+
+	    // Phase 5 loopback oracle: deterministic per-node stop point.
+	    // Inert unless -exittic was passed. Placed right after gametic++ so
+	    // both lockstep nodes hash identical state at the same gametic.
+	    G_ParityExitTicCheck ();
 	    
 	    // modify command for duplicated tics
 	    if (i != ticdup-1)
