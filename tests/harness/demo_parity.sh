@@ -40,7 +40,18 @@ if [ "$GOT_SHA" != "$IWAD_SHA" ]; then
 fi
 
 RUNDIR=$(mktemp -d)
-trap 'rm -rf "$RUNDIR"' EXIT
+# On exit, preserve the run log for CI before deleting the sandbox. The harness
+# runs in a mktemp dir that is normally cleaned up; if DOOM_ARTIFACT_DIR is set
+# (CI sets it), copy out.log there first so Actions can upload it on failure.
+# No-op locally when the var is unset.
+cleanup() {
+  if [ -n "${DOOM_ARTIFACT_DIR:-}" ] && [ -f "$RUNDIR/out.log" ]; then
+    mkdir -p "$DOOM_ARTIFACT_DIR"
+    cp "$RUNDIR/out.log" "$DOOM_ARTIFACT_DIR/demo-parity.log" 2>/dev/null || true
+  fi
+  rm -rf "$RUNDIR"
+}
+trap cleanup EXIT
 
 # Sanitized run dir: exactly one discoverable IWAD, exactly the frozen demo.
 ln -s "$IWAD" "$RUNDIR/doom1.wad"

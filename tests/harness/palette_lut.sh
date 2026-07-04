@@ -28,7 +28,15 @@ if [ "$GOT_SHA" != "$IWAD_SHA" ]; then
 fi
 
 RUNDIR=$(mktemp -d)
-trap 'rm -rf "$RUNDIR"' EXIT
+# Preserve the run log for CI before deleting the sandbox (see demo_parity.sh).
+cleanup() {
+  if [ -n "${DOOM_ARTIFACT_DIR:-}" ] && [ -f "$RUNDIR/out.log" ]; then
+    mkdir -p "$DOOM_ARTIFACT_DIR"
+    cp "$RUNDIR/out.log" "$DOOM_ARTIFACT_DIR/palette-lut.log" 2>/dev/null || true
+  fi
+  rm -rf "$RUNDIR"
+}
+trap cleanup EXIT
 ln -s "$IWAD" "$RUNDIR/doom1.wad"
 
 set +e
