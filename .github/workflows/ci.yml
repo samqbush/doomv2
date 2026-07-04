@@ -1,0 +1,67 @@
+name: CI
+
+# Phase 3: the engine is "lit" (Phase 2 crossed the Testability Milestone), so
+# green CI on a PR is the authoritative gate. This is the project's first CI and
+# the first verified Linux build (Phases 1-2 only ever built on macOS/clang).
+#
+# Build on Linux + macOS, then run the full self-frozen parity gate headlessly:
+#   demo-parity  - world-state consistency checksum
+#   frame-smoke  - byte-exact indexed software framebuffer hash
+#   palette-lut  - I_SetPalette index->ARGB8888 + gamma
+#   demo-regen   - gen_demo.py reproduces the frozen demo lump byte-exact
+# The IWAD is the committed BSD-licensed wads/freedoom1.wad (SHA-pinned in the
+# harnesses), so no fetch/licensing step is needed.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: build-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Keep the parity gate headless even off the harness defaults.
+      SDL_VIDEODRIVER: dummy
+      # Opt-in artifact dir: harnesses copy out.log here before cleanup.
+      DOOM_ARTIFACT_DIR: ${{ github.workspace }}/ci-artifacts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 + CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-dev cmake
+          echo "SDL2 (apt): $(dpkg-query -W -f='${Version}' libsdl2-dev)"
+
+      - name: Install SDL2 + CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install sdl2 || brew upgrade sdl2 || true
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
+          echo "SDL2 (brew): $(brew list --versions sdl2)"
+
+      - name: Configure
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test (full parity gate)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload run logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-logs-${{ matrix.os }}
+          path: ci-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
