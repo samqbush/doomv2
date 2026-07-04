@@ -531,7 +531,7 @@ regression cost).
 ### Phase status tracker
 | Phase | Status |
 |---|---|
-| 0 — Oracle & baseline | ☐ pending |
+| 0 — Oracle & baseline | ✅ complete (branch `phase-0-oracle-baseline`; see `docs/oracle/`) |
 | 1 — Compile 64-bit clean | ☐ pending |
 | 2 — SDL beachhead (Testability Milestone) | ☐ pending |
 | 3 — CI + interactive + L4 gate | ☐ pending |
