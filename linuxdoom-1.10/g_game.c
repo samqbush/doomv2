@@ -69,6 +69,7 @@ rcsid[] = "$Id: g_game.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 
 
 #include "g_game.h"
+#include "g_parity.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -1648,6 +1649,10 @@ boolean G_CheckDemoStatus (void)
 { 
     int             endtime; 
 	 
+    // Phase 2 demo-parity oracle: at demo completion, emit the canonical
+    // world-state checksum and exit cleanly (inert unless -checkdemo).
+    G_ParityCheckAndExit();
+
     if (timingdemo) 
     { 
 	endtime = I_GetTime (); 

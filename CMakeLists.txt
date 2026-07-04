@@ -32,9 +32,13 @@ set(STUB_SOURCES
   ${CMAKE_SOURCE_DIR}/platform/stub/i_net_stub.c
   ${CMAKE_SOURCE_DIR}/platform/stub/i_system_stub.c)
 
-add_executable(doom ${CORE_SOURCES} ${STUB_SOURCES})
+# Phase 2 demo-parity oracle instrumentation (inert unless -checkdemo).
+set(PARITY_SOURCES
+  ${CMAKE_SOURCE_DIR}/tests/parity/g_parity.c)
 
-target_include_directories(doom PRIVATE ${LEGACY_DIR})
+add_executable(doom ${CORE_SOURCES} ${STUB_SOURCES} ${PARITY_SOURCES})
+
+target_include_directories(doom PRIVATE ${LEGACY_DIR} ${CMAKE_SOURCE_DIR}/tests/parity)
 
 # Keep the 1997 Linux source shape (pulls <math.h>, <alloca.h>, mouse config,
 # and the NORMALUNIX path/IO code) so we do not silently drift behavior.
@@ -49,3 +53,21 @@ target_compile_options(doom PRIVATE
   -Wshorten-64-to-32)
 
 target_link_libraries(doom m)
+
+#
+# Phase 2 demo-parity oracle tests (see docs/oracle/ORACLE_STRATEGY.md).
+#
+# demo-regen: gen_demo.py reproduces the committed parity.lmp byte-exact.
+# demo-parity: replay the scripted v110 demo headless under -checkdemo and
+#              assert the frozen canonical world-state checksum.
+# frame-smoke is added once the SDL software drawer is available (Phase 2 §C).
+#
+enable_testing()
+
+add_test(NAME demo-regen
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/demo_regen.sh ${CMAKE_SOURCE_DIR})
+
+add_test(NAME demo-parity
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/demo_parity.sh
+          $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
+
