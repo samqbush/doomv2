@@ -20,6 +20,7 @@
 #include "doomtype.h"
 #include "d_event.h"
 #include "d_main.h"
+#include "m_argv.h"
 #include "m_misc.h"
 #include "i_video.h"
 #include "i_sound.h"
@@ -30,6 +31,17 @@
 #include "i_system.h"
 
 int	mb_used = 6;
+
+// use_mouse config default (m_misc.c). When 0, mouse events are not posted.
+extern int	usemouse;
+
+// Current DOOM mouse button mask (bit0=left, bit1=middle, bit2=right), kept
+// across events so motion carries the held buttons -- matches the legacy X11
+// ButtonMask semantics without querying global state each event.
+static int	mouse_buttons = 0;
+
+// -grabmouse is resolved lazily on the first pump (video is up by then).
+static boolean	mouse_grab_checked = false;
 
 void I_Tactile(int on, int off, int total)
 {
@@ -124,6 +136,36 @@ static int I_TranslateKey(SDL_Keysym* sym)
 }
 
 //
+// Map an SDL mouse button to the DOOM button-mask bit (L=1, M=2, R=4).
+//
+static int I_SDLButtonBit(Uint8 button)
+{
+    switch (button)
+    {
+      case SDL_BUTTON_LEFT:	return 1;
+      case SDL_BUTTON_MIDDLE:	return 2;
+      case SDL_BUTTON_RIGHT:	return 4;
+      default:			return 0;
+    }
+}
+
+//
+// Resolve -grabmouse once. SDL relative-mouse mode hides the cursor, confines
+// it, and feeds relative xrel/yrel deltas -- replacing the legacy X11
+// warp-to-center. It may fail under a headless/dummy video driver; that is not
+// fatal, we simply run ungrabbed.
+//
+static void I_UpdateMouseGrab(void)
+{
+    if (mouse_grab_checked)
+	return;
+    mouse_grab_checked = true;
+
+    if (M_CheckParm("-grabmouse"))
+	SDL_SetRelativeMouseMode(SDL_TRUE);
+}
+
+//
 // I_StartTic
 // Pump SDL events into the DOOM event queue. Sole owner of the input pump.
 //
@@ -134,6 +176,8 @@ void I_StartTic(void)
 
     if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
 	return;
+
+    I_UpdateMouseGrab();
 
     while (SDL_PollEvent(&sdlev))
     {
@@ -151,6 +195,37 @@ void I_StartTic(void)
 	    event.data1 = I_TranslateKey(&sdlev.key.keysym);
 	    if (event.data1)
 		D_PostEvent(&event);
+	    break;
+
+	  case SDL_MOUSEBUTTONDOWN:
+	  case SDL_MOUSEBUTTONUP:
+	    if (!usemouse)
+		break;
+	    {
+		int bit = I_SDLButtonBit(sdlev.button.button);
+		if (sdlev.type == SDL_MOUSEBUTTONDOWN)
+		    mouse_buttons |= bit;
+		else
+		    mouse_buttons &= ~bit;
+		event.type = ev_mouse;
+		event.data1 = mouse_buttons;
+		event.data2 = event.data3 = 0;
+		D_PostEvent(&event);
+	    }
+	    break;
+
+	  case SDL_MOUSEMOTION:
+	    if (!usemouse)
+		break;
+	    if (sdlev.motion.xrel == 0 && sdlev.motion.yrel == 0)
+		break;
+	    event.type = ev_mouse;
+	    event.data1 = mouse_buttons;
+	    // Legacy scaled the deltas by <<2; multiply to avoid UB on negative
+	    // deltas. SDL y grows downward, DOOM wants up-positive, hence -yrel.
+	    event.data2 = sdlev.motion.xrel * 4;
+	    event.data3 = -sdlev.motion.yrel * 4;
+	    D_PostEvent(&event);
 	    break;
 
 	  case SDL_QUIT:
