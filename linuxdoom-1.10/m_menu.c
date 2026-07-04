@@ -1743,7 +1743,7 @@ void M_Drawer (void)
     static short	y;
     short		i;
     short		max;
-    char		string[40];
+    char		string[128];
     int			start;
 
     inhelpscreens = false;
@@ -1759,15 +1759,22 @@ void M_Drawer (void)
 	    for (i = 0;i < strlen(messageString+start);i++)
 		if (*(messageString+start+i) == '\n')
 		{
-		    memset(string,0,40);
-		    strncpy(string,messageString+start,i);
+		    memset(string,0,sizeof(string));
+		    // Clamp the copy to the buffer: several endmsg[] entries are
+		    // longer than a naive fixed buffer (missing commas in the
+		    // table concatenate literals), and a fortified strncpy_chk
+		    // aborts on any count that exceeds the object size.
+		    strncpy(string,messageString+start,
+			    (i < (int)sizeof(string)) ? i : (int)sizeof(string)-1);
+		    string[sizeof(string)-1] = '\0';
 		    start += i+1;
 		    break;
 		}
 				
 	    if (i == strlen(messageString+start))
 	    {
-		strcpy(string,messageString+start);
+		strncpy(string,messageString+start,sizeof(string)-1);
+		string[sizeof(string)-1] = '\0';
 		start += i;
 	    }
 				

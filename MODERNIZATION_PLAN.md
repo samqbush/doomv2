@@ -119,8 +119,8 @@ Testability Milestone at the end of Phase 2.** Phases 0–2 are therefore
 
 | Component | Target rung | Residual risk (named) | Closes at |
 |---|---|---|---|
-| Portable core | **L2 → L4** | Dark until Phase 2. **Reached L3 at Phase 2** (self-frozen demo-parity + exact frame-hash + palette-lut green under `ctest`). Residual: master is self-referential + demo-bounded coverage. Rises to L4 (full parity CI on Linux+macOS) in Phase 3. | Phase 3 |
-| SDL2 platform layer | **L1 → L3** | No pixel-exact test for a *new* backend; rely on frame-hash smoke + manual visual check until characterization harness exists. | Phase 4 |
+| Portable core | **L2 → L4** | Dark until Phase 2. Reached L3 at Phase 2 (self-frozen demo-parity + exact frame-hash + palette-lut green under `ctest`). **Reached L4 at Phase 3** — full parity gate green in CI on **Linux + macOS** (first verified Linux build; byte-exact frame-hash agrees cross-platform). Residual: master is self-referential + demo-bounded coverage (unchanged — the oracle is self-frozen by design). | ✅ Phase 3 |
+| SDL2 platform layer | **L1 → L3** | No pixel-exact test for a *new* backend; rely on frame-hash smoke + manual visual check until characterization harness exists. Phase 3 added full keyboard+mouse input and a documented manual interactive-play checklist; `-Werror` holds the layer to zero warnings. | Phase 4 |
 | Audio | **L1** | Audio correctness is perceptual; smoke checklist only. Low regression cost. | (accepted) |
 | Netcode | **L2** | Lockstep desync only reproducible with ≥2 peers; use recorded-demo consistency checksum as oracle. | Phase 5 |
 | DOS drivers | **L0** | Archived; zero users, zero regression cost. | (accepted, blessed) |
@@ -465,13 +465,29 @@ playability.
   tolerance + retained artifacts on failure.
 
 #### Decisions made
-- CI gate = **build + demo-parity + frame smoke** (**decided**). `-Werror` on
-  legacy core = **deferred** (too noisy) — platform files only for now.
+- CI gate = **build + full parity gate** (`demo-parity`, `frame-smoke`,
+  `palette-lut`, `demo-regen`) on **Linux + macOS** (**decided** — all 4 ctest
+  targets, not just parity+frame). `-Werror` on legacy core = **deferred** (too
+  noisy) — platform files only, via per-source `COMPILE_OPTIONS`. The Clang-only
+  `-Wshorten-64-to-32` is gated behind a `check_c_compiler_flag` probe so GCC
+  builds. CI **runs but is not enforced** by this plan — required-status-check
+  enforcement is a manual GitHub-UI step (Settings → Branches). Base branch is
+  **`main`** (the default), not `master`. Mouse = full support (relative motion
+  + buttons + grab). Interactive smoke = documented manual checklist under
+  `docs/`.
 
 #### Verification & Exit Criteria (Definition of Done)
-- [ ] **Green CI on the PR is the authoritative signal** (lit regime).
-- [ ] Interactive play smoke: a human can start a level and move (checklist).
-- [ ] Demo parity + frame smoke green in CI.
+- [x] **Green CI on the PR is the authoritative signal** (lit regime) — CI green
+      on **Linux + macOS** (`build-test` matrix), the project's first CI run and
+      first verified Linux build.
+- [x] Interactive play smoke: keyboard + mouse input implemented; documented
+      manual checklist at `docs/interactive-play-checklist.md` (visual steps need
+      a desktop session; a headless `-grabmouse` boot pre-check confirms the
+      grab path is non-fatal and determinism is preserved — `PARITY: MATCH`).
+- [x] Demo parity + frame smoke (+ palette-lut + demo-regen) green in CI on both
+      runners; byte-exact frame hash agrees across Linux and macOS.
+- [x] `-Werror` platform build clean (SDL layer + active stubs zero-warning;
+      legacy core stays warn-only, deferred).
 
 ---
 
@@ -540,8 +556,10 @@ regression cost).
 
 ## 7. Execution governance
 
-- **Branch per phase.** Never commit phase work to `master`. One PR per phase;
-  branch e.g. `phase-2-sdl-beachhead`.
+- **Branch per phase.** Never commit phase work to `main`. One PR per phase;
+  branch e.g. `phase-3-ci-interactive`, PR into **`main`** (the default branch).
+  *(Phases 1 & 2 were developed on branches but only merged into `main` at the
+  start of Phase 3, which brought them into the mainline and under CI.)*
 - **Regime-aware gate.** Phases 0–2 (entering) are **dark** → advance on captured
   oracle/smoke evidence, not a test suite the engine can't run yet. Phases 2
   (exiting)–5 are **lit** → **green CI on the PR is authoritative.**
@@ -559,8 +577,8 @@ regression cost).
 |---|---|
 | 0 — Oracle & baseline | ✅ complete (branch `phase-0-oracle-baseline`; see `docs/oracle/`) |
 | 1 — Compile 64-bit clean | ✅ complete (branch `phase-1-compile-64bit`; macOS clang 21 links `./build/doom`, zero 64-bit warnings; Linux deferred to Phase 3 CI) |
-| 2 — SDL beachhead (Testability Milestone) | ✅ complete (branch `phase-2-sdl-beachhead`; SDL2 backend boots + renders, `ctest` demo-parity/frame-smoke/palette-lut green; core crossed Testability Milestone, rung L3) |
-| 3 — CI + interactive + L4 gate | ☐ pending |
+| 2 — SDL beachhead (Testability Milestone) | ✅ complete (branch `phase-2-sdl-beachhead`, merged to `main` at start of Phase 3; SDL2 backend boots + renders, `ctest` demo-parity/frame-smoke/palette-lut green; core crossed Testability Milestone, rung L3) |
+| 3 — CI + interactive + L4 gate | ✅ complete (branch `phase-3-ci-interactive`; first CI (`.github/workflows/ci.yml`) green on **Linux + macOS** — first verified Linux build; full parity gate + build; full keyboard/mouse input; `-Werror` on platform files; manual interactive checklist. Core reached **L4**. CI enforcement left as a manual GitHub-UI step.) |
 | 4 — SDL audio, retire sndserver | ☐ pending |
 | 5 — Portable netcode | ☐ pending |
 
@@ -593,9 +611,12 @@ regression cost).
 
 ## 9. Open questions / decisions needed from stakeholders
 
-- **[DECISION NEEDED — legal/data]** Which IWAD does CI use for demo-parity? A
-  freely-redistributable shareware `DOOM1.WAD` avoids licensing issues; confirm
-  it may be committed/fetched in CI. *(Blocks Phase 0.)*
+- **[RESOLVED — legal/data]** Which IWAD does CI use for demo-parity? **The
+  freely-redistributable BSD-licensed `wads/freedoom1.wad` is committed** (with
+  `FREEDOOM-COPYING.txt` / `FREEDOOM-CREDITS.txt`) and SHA-256-pinned in the
+  harnesses; presented as `doom1.wad` it yields the shareware gamemode we froze
+  against. CI uses the committed copy directly (no fetch/licensing step). *(Was:
+  blocks Phase 0.)*
 - **[DECISION NEEDED — product scope]** Is **cross-platform to Windows** in scope
   now, or Linux+macOS first? Affects whether Phase 5 uses SDL_net vs a
   POSIX-only shim. *(Blocks Phase 5 transport choice; Phases 0–4 unaffected.)*

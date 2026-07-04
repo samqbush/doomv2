@@ -52,11 +52,28 @@ target_compile_definitions(doom PRIVATE NORMALUNIX LINUX)
 
 # Dark-regime warning gate: surface 64-bit truncation / UB. Not -Werror yet
 # (legacy core is noisy; that is Phase 3, platform files only).
+#
+# Portable flags apply to every compiler. -Wshorten-64-to-32 is Clang/AppleClang
+# only (GCC on the Linux CI runner rejects it), so it is gated by a feature probe
+# rather than hard-coded -- keeps the 64-bit truncation gate on macOS without
+# breaking the first Linux build.
+include(CheckCCompilerFlag)
 target_compile_options(doom PRIVATE
   -Wall -Wextra
   -Wpointer-to-int-cast
-  -Wint-to-pointer-cast
-  -Wshorten-64-to-32)
+  -Wint-to-pointer-cast)
+
+check_c_compiler_flag("-Wshorten-64-to-32" HAVE_WSHORTEN_64_TO_32)
+if(HAVE_WSHORTEN_64_TO_32)
+  target_compile_options(doom PRIVATE -Wshorten-64-to-32)
+endif()
+
+# Phase 3: -Werror on the PLATFORM files only (SDL layer + active stubs). These
+# are new, modern code we own -- hold them to a zero-warning bar. The legacy
+# core stays warn-only (still noisy; promoting it is deferred). Applied per
+# source file so the core glob is unaffected.
+set_source_files_properties(${SDL_SOURCES} ${STUB_SOURCES}
+  PROPERTIES COMPILE_OPTIONS "-Werror")
 
 target_link_libraries(doom m SDL2::SDL2)
 
