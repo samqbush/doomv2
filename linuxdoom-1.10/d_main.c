@@ -1104,6 +1104,13 @@ void D_DoomMain (void)
     printf ("I_Init: Setting up machine state.\n");
     I_Init ();
 
+    // Phase 5 loopback oracle: a scripted netgame runs headless and needs no
+    // rendering. Skipping the drawer (and the level-start melt wipe) is gated on
+    // -scriptcmds so it can NOT affect the -playdemo demo-parity oracle, whose
+    // frozen checksum was captured with the drawer active.
+    if (G_NetScriptEnabled ())
+	nodrawers = true;
+
     printf ("D_CheckNetGame: Checking network game status.\n");
     D_CheckNetGame ();
 

@@ -37,16 +37,17 @@ demonstrably met.
 | Frame-hash smoke (Phase 2 ✅) | `ctest --test-dir build -R frame-smoke` *(byte-exact indexed `screens[0]` hash `3e61b0f0c5dfd943` + non-blank guard)* |
 | Palette-LUT gate (Phase 2 ✅) | `ctest --test-dir build -R palette-lut` *(validates `I_SetPalette` index→ARGB8888 + gamma)* |
 | Demo-regen check (Phase 2 ✅) | `ctest --test-dir build -R demo-regen` *(asserts `tools/gen_demo.py` reproduces `parity.lmp` byte-exact)* |
-| Full parity gate (Phase 3 ✅) | `ctest --test-dir build --output-on-failure` *(all 4 targets; what CI runs)* |
+| Full parity gate (Phase 3 ✅) | `ctest --test-dir build --output-on-failure` *(all 5 targets; what CI runs)* |
 | Interactive-play smoke (Phase 3 ✅) | manual — see `docs/interactive-play-checklist.md` *(needs a desktop session; `-grabmouse` boot recipe + keyboard/mouse step table)* |
 | Audio smoke (Phase 4 ✅) | manual — see `docs/audio-smoke-checklist.md` *(needs a desktop + audio device; L1 perceptual SFX-in-sync checklist; oracle/`-nosound` modes suppress audio)* |
-| Loopback net test (*introduced Phase 5*) | `ctest -R net-loopback` |
+| Loopback net test (Phase 5 ✅) | `ctest --test-dir build -R net-loopback` *(2 real `doom` procs over 127.0.0.1 UDP via `platform/posix/i_net_posix.c`; scripted per-node input; asserts lockstep held (no consistency failure) + self-frozen 2-player checksum `e8ca533e8baf4ad4`)* |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
 
 CI (`.github/workflows/ci.yml`, Phase 3 ✅) builds on **Linux + macOS** and runs
-`build → ctest` (the full 4-target parity gate) on every push to `main`, every
-PR, and `workflow_dispatch`. It is **not** yet a *required* status check —
-enforcement is a manual GitHub-UI step (Settings → Branches → protect `main`).
+`build → ctest` (the full 5-target parity gate, incl. `net-loopback` Phase 5 ✅)
+on every push to `main`, every PR, and `workflow_dispatch`. It is **not** yet a
+*required* status check — enforcement is a manual GitHub-UI step (Settings →
+Branches → protect `main`).
 
 > **Never invent a command you haven't verified.** The only command verified
 > against the current tree is `make` in `linuxdoom-1.10/` and `legacy/sndserv/`
@@ -102,7 +103,10 @@ assuming it passed.
 - State **"dropped" vs "deferred"** explicitly. Already decided: language stays
   **C11**; backend is **SDL2**; build is **CMake**; renderer/playsim are
   **kept**; DOS `ipx/`+`sersrc/` are **dropped/archived**; separate `sndserver`
-  is **dropped**; GPU renderer and client/server netcode are **deferred**.
+  is **dropped**; the lockstep netcode is **ported to a raw POSIX BSD-sockets
+  transport** (`platform/posix/i_net_posix.c`, **Linux+macOS only, no SDL_net /
+  no new deps**, Phase 5 ✅); GPU renderer and a rearchitected client/server
+  netcode are **deferred**.
 - Genuine stakeholder blockers live in the plan's §9 Open Questions (CI IWAD
   licensing, Windows scope, GPU-renderer direction) — resolve with the user, do
   not guess.

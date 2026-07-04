@@ -108,7 +108,7 @@ process, so testability arrives together for the core once it builds and boots:
 |---|---|---|
 | Portable core + SDL2 platform | **End of Phase 2** (first runnable frame on modern toolchain) | First point it builds 64-bit-clean, boots, loads a WAD, and can replay a demo = ≥1 meaningful passing check |
 | Audio (SDL2) | **Phase 4** ✅ | Landed: in-process SDL push audio; game ran silent before it. Non-blocking; core untouched (demo-parity green). |
-| Netcode | **Phase 5** | Deterministic replay provable before real net |
+| Netcode | **Phase 5** ✅ | Landed: portable POSIX BSD-sockets transport; 2-proc 127.0.0.1 loopback consistency test green (self-frozen `e8ca533e8baf4ad4`). Sim untouched (demo `a00552bbf22274a2` unchanged). |
 | `ipx/`/`sersrc/` | **Never (archived)** | L0 by decision |
 
 **The single most important marker in this plan: the core crosses its
@@ -122,7 +122,7 @@ Testability Milestone at the end of Phase 2.** Phases 0–2 are therefore
 | Portable core | **L2 → L4** | Dark until Phase 2. Reached L3 at Phase 2 (self-frozen demo-parity + exact frame-hash + palette-lut green under `ctest`). **Reached L4 at Phase 3** — full parity gate green in CI on **Linux + macOS** (first verified Linux build; byte-exact frame-hash agrees cross-platform). Residual: master is self-referential + demo-bounded coverage (unchanged — the oracle is self-frozen by design). | ✅ Phase 3 |
 | SDL2 platform layer | **L1 → L3** | No pixel-exact test for a *new* backend; rely on frame-hash smoke + manual visual check until characterization harness exists. Phase 3 added full keyboard+mouse input and a documented manual interactive-play checklist; `-Werror` holds the layer to zero warnings. | Phase 4 |
 | Audio | **L1** | Audio correctness is perceptual; smoke checklist only. Low regression cost. **Reached L1 at Phase 4** — in-process SDL push audio (`i_sound_sdl.c`) under `-Werror`; parity+frame-hash stay green (sim untouched); device opens at 11025/2ch/S16, oracle modes suppress audio. Residual: no automated audio oracle (blessed downgrade — human perceptual run pending). | ✅ Phase 4 |
-| Netcode | **L2** | Lockstep desync only reproducible with ≥2 peers; use recorded-demo consistency checksum as oracle. | Phase 5 |
+| Netcode | **L2** | Lockstep desync only reproducible with ≥2 peers; use recorded-demo consistency checksum as oracle. **Reached L2 at Phase 5** — `platform/posix/i_net_posix.c` (raw POSIX BSD-sockets, Linux+macOS) under `-Werror`; 2-proc 127.0.0.1 loopback `net-loopback` ctest asserts lockstep held (no consistency failure) + self-frozen 2-player checksum `e8ca533e8baf4ad4`; wire layout guarded by `_Static_assert`s + receive-side validation. Residual: loopback-only (single host, no real WAN/latency/loss; Windows/Winsock deferred); checksum is self-frozen (self-consistency only, per oracle strategy). | ✅ Phase 5 |
 | DOS drivers | **L0** | Archived; zero users, zero regression cost. | (accepted, blessed) |
 
 **Blessed downgrades:** Audio at L1 and DOS drivers at L0 are *first-class
@@ -550,9 +550,9 @@ regression cost).
 #### Tasks
 | ID | Task | Component | Blocked by |
 |----|------|-----------|------------|
-| 5.1 | Swap `i_net.c` transport to SDL_net / POSIX+Winsock shim behind `i_net.h` | net | — |
-| 5.2 | Fix `doomcom_t`/`netbuffer` packing/endianness for 64-bit | net | 5.1 |
-| 5.3 | Loopback 2-node scripted-demo consistency test | net/test | 5.2 |
+| 5.1 | Port `i_net.c` to a raw POSIX BSD-sockets shim behind `i_net.h` (`platform/posix/i_net_posix.c`; `getaddrinfo`/`fcntl(O_NONBLOCK)`/`SO_REUSEADDR`; `host:port` peer syntax; IP+port peer matching for same-host loopback) | net | — |
+| 5.2 | Harden `doomdata_t`/`ticcmd_t` wire format for 64-bit (`_Static_assert`s on sizes+offsets; signed-char move fields; validate received `numtics`/`datalength` before decode) | net | 5.1 |
+| 5.3 | Loopback 2-node scripted consistency test (2 real procs over 127.0.0.1 UDP; `-scriptcmds`/`-exittic` instrumentation; self-frozen 2-player checksum) | net/test | 5.2 |
 
 #### Risks & Mitigations
 - **Risk:** struct packing/endian desync → **Mitigation:** explicit fixed-width
@@ -561,11 +561,25 @@ regression cost).
 #### Decisions made
 - Keep peer-to-peer lockstep model (**decided** — client/server rewrite is a
   **future consideration**, not this plan). DOS `ipx/sersrc` = **dropped/archived**.
+- **Transport = raw POSIX BSD-sockets shim, Linux+macOS only, no SDL_net / no new
+  deps** (resolves §9 "Windows scope" for this phase; Windows/Winsock stays a
+  future consideration). Legacy `linuxdoom-1.10/i_net.c` kept in tree for reference.
+- **Same-host loopback addressing:** original used `-port` for both bind AND every
+  peer's dest, so two procs on 127.0.0.1 sent to themselves. Added `host:port`
+  peer syntax (kept `-port` = local bind), `SO_REUSEADDR`, and IP+**port** peer
+  matching in `PacketGet` so a node ignores its own echo.
+- **Netmode checksum:** the netgame oracle hashes the *playsim* RNG cursor
+  (`prndindex`, `P_Random`) and **omits** the cosmetic `rndindex` (`M_Random`,
+  driven by sound-pitch which depends on each node's local listener position, so
+  it legitimately diverges without affecting the sim). Netmode-gated on
+  `-scriptcmds`; the demo-parity checksum (`a00552bbf22274a2`) is unchanged.
 
 #### Verification & Exit Criteria (Definition of Done)
-- [ ] Loopback 2-node game stays consistency-checksum-synced for a scripted demo
-      (parity/oracle check).
-- [ ] Green CI including the loopback net test.
+- [x] Loopback 2-node game stays consistency-checksum-synced for a scripted demo
+      (both nodes exit 0, no `consistency failure`, same checksum
+      `e8ca533e8baf4ad4`, stable across repeated runs).
+- [x] Green CI including the loopback net test (`ctest -R net-loopback`; full
+      5-target gate green — `a00552bbf22274a2` preserved).
 
 ---
 
@@ -595,7 +609,7 @@ regression cost).
 | 2 — SDL beachhead (Testability Milestone) | ✅ complete (branch `phase-2-sdl-beachhead`, merged to `main` at start of Phase 3; SDL2 backend boots + renders, `ctest` demo-parity/frame-smoke/palette-lut green; core crossed Testability Milestone, rung L3) |
 | 3 — CI + interactive + L4 gate | ✅ complete (branch `phase-3-ci-interactive`; first CI (`.github/workflows/ci.yml`) green on **Linux + macOS** — first verified Linux build; full parity gate + build; full keyboard/mouse input; `-Werror` on platform files; manual interactive checklist. Core reached **L4**. CI enforcement left as a manual GitHub-UI step.) |
 | 4 — SDL audio, retire sndserver | ✅ complete (branch `phase-4-sdl-audio`; in-process SDL push audio in `platform/sdl/i_sound_sdl.c`, DMX mixer ported verbatim under `-Werror`; `SNDSERV` undefined so `I_UpdateSound` runs; `sndserv/` archived to `legacy/`, `i_sound_stub.c` retired; all 4 `ctest` targets green — checksum `a00552bbf22274a2` unchanged; oracle/`-nosound` modes suppress audio; L1 audio smoke checklist added, human perceptual run pending) |
-| 5 — Portable netcode | ☐ pending |
+| 5 — Portable netcode | ✅ complete (branch `phase-5-portable-netcode`; `linuxdoom-1.10/i_net.c` ported to raw POSIX BSD-sockets shim `platform/posix/i_net_posix.c` under `-Werror` — `getaddrinfo`/`fcntl`/`SO_REUSEADDR`, `host:port` peers, IP+port matching, packet validation, `_Static_assert` wire-layout guards; `-scriptcmds`/`-exittic` netgame oracle instrumentation; 2-proc 127.0.0.1 loopback `net-loopback` ctest self-frozen to `e8ca533e8baf4ad4`; all 5 `ctest` targets green — demo `a00552bbf22274a2` unchanged. Netmode checksum hashes playsim `prndindex`, omits cosmetic `rndindex`.) |
 
 ---
 

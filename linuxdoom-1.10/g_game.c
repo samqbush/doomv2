@@ -435,6 +435,11 @@ void G_BuildTiccmd (ticcmd_t* cmd)
 	sendsave = false; 
 	cmd->buttons = BT_SPECIAL | BTS_SAVEGAME | (savegameslot<<BTS_SAVESHIFT); 
     } 
+
+    // Phase 5 loopback oracle: replace this local player's control input with
+    // the scripted stream (consistancy is preserved). Inert unless -scriptcmds.
+    if (G_NetScriptEnabled ())
+	G_NetScriptApply (cmd);
 } 
  
 

@@ -10,8 +10,9 @@ project(doom C)
 #
 # The dead X11/OSS/BSD platform sources (i_video.c, i_sound.c, i_net.c,
 # i_system.c) are excluded from the core glob. Video, system, and (Phase 4)
-# in-process audio are provided by platform/sdl/; net remains a no-op stub under
-# platform/stub/ until Phase 5. The originals are kept untouched for reference.
+# in-process audio are provided by platform/sdl/; Phase 5 provides a real
+# portable POSIX BSD-sockets net transport under platform/posix/ (replacing the
+# Phase 1 single-player stub). The originals are kept untouched for reference.
 #
 
 set(CMAKE_C_STANDARD 11)
@@ -27,11 +28,12 @@ list(REMOVE_ITEM CORE_SOURCES
   ${LEGACY_DIR}/i_net.c
   ${LEGACY_DIR}/i_system.c)
 
-set(STUB_SOURCES
-  ${CMAKE_SOURCE_DIR}/platform/stub/i_net_stub.c)
+set(NET_SOURCES
+  ${CMAKE_SOURCE_DIR}/platform/posix/i_net_posix.c)
 
 # Phase 2 SDL2 platform layer: real video (blit) + system (timing/input).
-# Phase 4 adds in-process SDL audio (i_sound). Net stays stubbed until Phase 5.
+# Phase 4 adds in-process SDL audio (i_sound). Phase 5 adds the POSIX net
+# transport (i_net), replacing the single-player stub.
 find_package(SDL2 REQUIRED)
 set(SDL_SOURCES
   ${CMAKE_SOURCE_DIR}/platform/sdl/i_video_sdl.c
@@ -42,7 +44,7 @@ set(SDL_SOURCES
 set(PARITY_SOURCES
   ${CMAKE_SOURCE_DIR}/tests/parity/g_parity.c)
 
-add_executable(doom ${CORE_SOURCES} ${STUB_SOURCES} ${SDL_SOURCES} ${PARITY_SOURCES})
+add_executable(doom ${CORE_SOURCES} ${NET_SOURCES} ${SDL_SOURCES} ${PARITY_SOURCES})
 
 target_include_directories(doom PRIVATE ${LEGACY_DIR} ${CMAKE_SOURCE_DIR}/tests/parity)
 
@@ -68,11 +70,11 @@ if(HAVE_WSHORTEN_64_TO_32)
   target_compile_options(doom PRIVATE -Wshorten-64-to-32)
 endif()
 
-# Phase 3: -Werror on the PLATFORM files only (SDL layer + active stubs). These
+# Phase 3: -Werror on the PLATFORM files only (SDL layer + POSIX net). These
 # are new, modern code we own -- hold them to a zero-warning bar. The legacy
 # core stays warn-only (still noisy; promoting it is deferred). Applied per
 # source file so the core glob is unaffected.
-set_source_files_properties(${SDL_SOURCES} ${STUB_SOURCES}
+set_source_files_properties(${SDL_SOURCES} ${NET_SOURCES}
   PROPERTIES COMPILE_OPTIONS "-Werror")
 
 target_link_libraries(doom m SDL2::SDL2)
@@ -86,6 +88,11 @@ target_link_libraries(doom m SDL2::SDL2)
 # frame-smoke: assert the byte-exact indexed screens[0] frame hashes (software
 #              drawer) against the frozen frame master.
 # palette-lut: validate I_SetPalette's index->ARGB8888 conversion + gamma.
+#
+# Phase 5 adds:
+# net-loopback: two real doom processes over 127.0.0.1 UDP, scripted per-node
+#               input, assert both stay lockstep-synced (no consistency
+#               failure) and reach the frozen 2-player world-state checksum.
 #
 enable_testing()
 
@@ -102,5 +109,9 @@ add_test(NAME frame-smoke
 
 add_test(NAME palette-lut
   COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/palette_lut.sh
+          $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
+
+add_test(NAME net-loopback
+  COMMAND ${CMAKE_SOURCE_DIR}/tests/harness/net_loopback.sh
           $<TARGET_FILE:doom> ${CMAKE_SOURCE_DIR})
 

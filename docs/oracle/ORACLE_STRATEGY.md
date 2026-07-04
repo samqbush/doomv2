@@ -106,3 +106,29 @@ are **version 109** (vanilla 1.9), but this engine's `VERSION` is **110**
 | 1 — static seam/data baseline | WAD CRCs, seam contracts, RNG/tic invariants | **Phase 0 (now)** | Independent of any binary |
 | 2 — original-binary capture | run the actual legacy binary in a period env | *not pursued* (maintainer declined external ports) | Independent |
 | 3 — self-frozen golden master | first-good-boot demo checksum + frame hashes | **end of Phase 2** | Self-referential (named risk) |
+| 3n — self-frozen net golden master | 2-node 127.0.0.1 loopback world-state checksum (`e8ca533e8baf4ad4`) proving lockstep held across the real POSIX UDP transport | **Phase 5** | Self-referential (named risk) |
+
+### Layer 3n — self-frozen netcode golden master (FROZEN at Phase 5)
+
+Phase 5 extends the self-frozen golden-master idea to the net transport. Two real
+`doom` processes talk over 127.0.0.1 UDP via `platform/posix/i_net_posix.c`, each
+driven by a fixed per-node scripted ticcmd stream (`tools/gen_netscript.py`), and
+both stop at the same gametic (`-exittic`) to emit the world-state checksum
+(`g_parity.c`). The `net-loopback` ctest asserts: both exit 0 with **no
+`consistency failure`** (the engine's own lockstep cross-check stayed silent, i.e.
+the transport delivered commands with no packing/endian desync), both print the
+**same** checksum, and it matches the frozen `tests/fixtures/net_loopback.checksum`
+= `e8ca533e8baf4ad4`.
+
+**Netmode checksum note.** In netmode the checksum hashes the *playsim* RNG cursor
+(`prndindex`, advanced by `P_Random`) and deliberately **omits** the cosmetic
+`rndindex` (advanced by `M_Random`). The cosmetic RNG is driven by sound-pitch,
+which depends on each node's *local* listener position, so it legitimately diverges
+between nodes without any effect on the simulation. This is netmode-gated on
+`-scriptcmds`; the Phase 2 demo-parity checksum (`a00552bbf22274a2`) is unchanged.
+
+**Named residual risk (same as Layer 3):** the reference is produced by our OWN
+engine (no external port / no legacy binary, per Decision 2), so it guarantees
+**self-consistency of subsequent refactors**, not independent first-boot
+correctness. Coverage is also **loopback-only** — single host, no real
+WAN/latency/loss, and Windows/Winsock is deferred.

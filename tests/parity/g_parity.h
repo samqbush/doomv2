@@ -30,4 +30,19 @@ int G_ParityFrameHashEnabled(void);
 // before the final blit. Inert unless -framehash was supplied.
 void G_ParityFrameSample(int wipe_in_progress);
 
+// ---- Phase 5: netgame loopback instrumentation (inert unless flagged) ------
+
+#include "d_ticcmd.h"
+
+// True if -scriptcmds <file> was supplied.
+int G_NetScriptEnabled(void);
+
+// Overwrite the local player's control fields from the scripted stream,
+// preserving cmd->consistancy. Called at the end of G_BuildTiccmd.
+void G_NetScriptApply(ticcmd_t* cmd);
+
+// If -exittic <N> was supplied and gametic has reached N, emit the world-state
+// checksum and exit. Called from TryRunTics right after gametic++.
+void G_ParityExitTicCheck(void);
+
 #endif
