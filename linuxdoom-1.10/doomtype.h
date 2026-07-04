@@ -24,6 +24,8 @@
 #ifndef __DOOMTYPE__
 #define __DOOMTYPE__
 
+#include <stdint.h>
+
 
 #ifndef __BYTEBOOL__
 #define __BYTEBOOL__
@@ -38,22 +40,21 @@ typedef unsigned char byte;
 
 
 // Predefined with some OS.
-#ifdef LINUX
-#include <values.h>
-#else
-#define MAXCHAR		((char)0x7f)
-#define MAXSHORT	((short)0x7fff)
+#include <limits.h>
+#define MAXCHAR		SCHAR_MAX
+#define MAXSHORT	SHRT_MAX
 
 // Max pos 32-bit int.
-#define MAXINT		((int)0x7fffffff)	
+#define MAXINT		INT_MAX
+// MAXLONG/MINLONG intentionally kept 32-bit-valued: legacy code assumed a
+// 32-bit long, and LONG_MAX is 64-bit on LP64. (Unused outside this header.)
 #define MAXLONG		((long)0x7fffffff)
-#define MINCHAR		((char)0x80)
-#define MINSHORT	((short)0x8000)
+#define MINCHAR		SCHAR_MIN
+#define MINSHORT	SHRT_MIN
 
 // Max negative 32-bit integer.
-#define MININT		((int)0x80000000)	
+#define MININT		INT_MIN
 #define MINLONG		((long)0x80000000)
-#endif
 
 
 
