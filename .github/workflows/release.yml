@@ -45,7 +45,20 @@ jobs:
       - name: Resolve version
         id: ver
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME:-${{ github.event.inputs.version }}}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Tag push -> GITHUB_REF_NAME is the tag (v1.2.3).
+          # Manual run -> GITHUB_REF_NAME is the branch (main), so use the input.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          case "$V" in
+            v*) : ;;
+            *) echo "FAIL: version '$V' must start with 'v' (e.g. v1.0.0)"; exit 1 ;;
+          esac
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Release version: $V"
 
       - name: Install SDL2 + CMake + patchelf (Linux)
         if: runner.os == 'Linux'

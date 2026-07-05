@@ -43,7 +43,7 @@ demonstrably met.
 | Loopback net test (Phase 5 ✅) | `ctest --test-dir build -R net-loopback` *(2 real `doom` procs over 127.0.0.1 UDP via `platform/posix/i_net_posix.c`; scripted per-node input; asserts lockstep held (no consistency failure) + self-frozen 2-player checksum `e8ca533e8baf4ad4`)* |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
 | Package a release locally | `./tools/package_release.sh <version> [build-dir] [out-dir]` *(self-contained tarball: engine + vendored SDL2 + Freedoom `doom1.wad` + licenses + `run-doom.sh`; macOS ad-hoc-signs + rewrites rpath; fails on any leaked build/Homebrew path)* |
-| Cut a downloadable release | `git tag vX.Y.Z && git push origin vX.Y.Z` *(triggers `.github/workflows/release.yml`)* |
+| Cut a downloadable release | **Actions → "Release" → Run workflow** (branch `main`, version `vX.Y.Z`) — no git write. *(Or push a tag: `git push origin vX.Y.Z`. Both trigger `.github/workflows/release.yml`.)* |
 
 CI (`.github/workflows/ci.yml`, Phase 3 ✅) builds on **Linux + macOS** and runs
 `build → ctest` (the full 5-target parity gate, incl. `net-loopback` Phase 5 ✅)
@@ -54,28 +54,32 @@ Branches → protect `main`).
 ## Releases
 
 Downloadable macOS + Linux builds are published by
-`.github/workflows/release.yml`, triggered by pushing a **version tag** `v*`.
+`.github/workflows/release.yml`. **`main` is branch-protected — you never push
+commits to it.** The release workflow creates the tag + GitHub Release *for* you,
+so no direct `main` write is needed. Two ways to trigger it, both from
+already-merged, CI-green `main`:
 
-**When to tag:** only from `main`, after the phase/feature work is merged and CI
-is green on `main`. A release is a snapshot of an already-green `main`, never a
-way to ship un-merged work.
+**Recommended — the button (no local git at all):** GitHub → **Actions** →
+**Release** workflow → **Run workflow**, pick branch `main`, enter the version
+`vX.Y.Z`. `softprops/action-gh-release` creates the tag at `main`'s HEAD and
+publishes the release. This works even under branch protection.
 
-**How to tag (semantic versioning `vMAJOR.MINOR.PATCH`):**
+**Alternative — push a tag:** a tag is a separate ref from the `main` branch, so
+branch protection does **not** block it (unless tag-protection rules are set):
 
 ```
-git checkout main && git pull
-git tag v1.0.0            # annotate if you like: git tag -a v1.0.0 -m "…"
-git push origin v1.0.0
+git tag v1.0.0 origin/main     # tag the current merged main tip
+git push origin v1.0.0         # pushes only the tag ref, not the branch
 ```
 
-The tag push runs the release workflow: it builds on `ubuntu-22.04` + `macos-latest`,
-runs the **full parity gate** (a red gate blocks the release), packages each
-platform tarball via `tools/package_release.sh`, **smoke-boots the packaged
-tarball headlessly**, attaches a GPLv2 corresponding-source archive
-(`doom-<tag>-source.tar.gz`), and publishes the GitHub Release. Versioning: bump
-**PATCH** for fixes, **MINOR** for new user-visible capability, **MAJOR** for a
-break in the WAD/demo data contract or CLI. Use `-rcN`/`-beta` suffixes for
-pre-releases. `workflow_dispatch` allows a manual dry-run without tagging.
+Either path runs the workflow: build on `ubuntu-22.04` + `macos-latest`, run the
+**full parity gate** (a red gate blocks the release), package each platform
+tarball via `tools/package_release.sh`, **smoke-boot the packaged tarball
+headlessly**, attach a GPLv2 corresponding-source archive
+(`doom-<version>-source.tar.gz`), and publish the GitHub Release. Versioning
+(semantic `vMAJOR.MINOR.PATCH`): bump **PATCH** for fixes, **MINOR** for new
+user-visible capability, **MAJOR** for a break in the WAD/demo data contract or
+CLI. Use `-rcN`/`-beta` suffixes for pre-releases.
 Full checklist + release-notes template: `docs/RELEASING.md`.
 
 > **Never invent a command you haven't verified.** The only command verified

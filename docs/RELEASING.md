@@ -8,13 +8,22 @@ template.
 ## Checklist
 
 1. Make sure the change is **merged to `main`** and CI is **green on `main`**.
+   (`main` is branch-protected — you never push commits to it, and you don't need
+   to: the release workflow creates the tag + Release for you.)
 2. Pick a version (`vMAJOR.MINOR.PATCH`): PATCH = fixes, MINOR = new user-visible
    capability, MAJOR = a break in the WAD/demo data contract or CLI. Pre-releases
    use a `-rcN` / `-beta` suffix.
-3. Tag from `main` and push:
+3. Trigger the release — either way works, both from CI-green `main`:
+
+   **Recommended — the button (no local git):** GitHub → **Actions** →
+   **Release** → **Run workflow** → branch `main`, version `v1.0.0`. The workflow
+   tags `main`'s HEAD and publishes. Works under branch protection.
+
+   **Alternative — push a tag** (a tag is not the `main` branch, so branch
+   protection doesn't block it):
    ```bash
-   git checkout main && git pull
-   git tag -a v1.0.0 -m "DOOM (Modernized) v1.0.0"
+   git fetch origin
+   git tag v1.0.0 origin/main
    git push origin v1.0.0
    ```
 4. The workflow builds on `ubuntu-22.04` + `macos-latest`, runs the full parity
@@ -25,9 +34,8 @@ template.
    - `doom-<tag>-source.tar.gz` (GPLv2 corresponding source)
 5. Edit the published release body with the notes below.
 
-To dry-run without tagging, use the workflow's **Run workflow** button
-(`workflow_dispatch`) and supply a version — it builds + packages but you can
-delete the resulting draft/assets.
+The **Run workflow** button also serves as a dry-run: supply a version, and it
+builds + packages + publishes without any local git.
 
 ## Release-notes template
 
