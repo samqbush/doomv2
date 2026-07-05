@@ -58,6 +58,17 @@ jobs:
             *) echo "FAIL: version '$V' must start with 'v' (e.g. v1.0.0)"; exit 1 ;;
           esac
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Manual runs are dry-runs -> publish as a draft you can inspect/delete.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "draft=false" >> "$GITHUB_OUTPUT"
+          fi
+          # A version with a pre-release suffix (v1.0.0-rc1, -beta, ...) -> mark prerelease.
+          case "$V" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
           echo "Release version: $V"
 
       - name: Install SDL2 + CMake + patchelf (Linux)
@@ -116,7 +127,7 @@ jobs:
         with:
           tag_name: ${{ steps.ver.outputs.version }}
           name: DOOM (Modernized) ${{ steps.ver.outputs.version }}
-          draft: false
-          prerelease: false
+          draft: ${{ steps.ver.outputs.draft }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
           fail_on_unmatched_files: true
           files: dist/*.tar.gz

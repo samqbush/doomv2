@@ -26,7 +26,8 @@ out of the box without owning a copy of DOOM:
   Area          | Before (1997, Linux 1.10)        | After (2026)
   --------------+----------------------------------+-------------------------------
   Language      | K&R-era C, compiled with gcc     | C11 (C_STANDARD 11)
-  Build system  | GNU Make, Linux-only             | CMake (cmake -B build && build)
+  Build system  | GNU Make, Linux-only             | CMake (cmake -B build &&
+                |                                  |        cmake --build build)
   Compiles?     | No — dies on <values.h>, libc5   | Yes — 64-bit clean, Linux+macOS
   Video         | X11 Xlib + MIT-SHM, 8-bit        | SDL2 window; index->ARGB8888
                 | PseudoColor 320x200 (dead)       | palette LUT + gamma
