@@ -1,0 +1,133 @@
+name: Release
+
+# Publish downloadable, ready-to-run macOS + Linux builds when a version tag is
+# pushed. Each build is validated by the full parity gate (same as CI), packaged
+# into a self-contained tarball (engine + vendored SDL2 + Freedoom doom1.wad +
+# licenses + launcher), then smoke-tested by extracting the tarball into a clean
+# dir and booting it headlessly -- proving the vendored dylib/rpath, renamed WAD
+# and launcher all work, not just the build tree. A GPLv2 corresponding-source
+# archive is attached alongside the binaries.
+#
+# Trigger:  git tag vX.Y.Z && git push origin vX.Y.Z
+# See .github/copilot-instructions.md ("Releases") for the tagging convention.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to package (e.g. v1.0.0) for a manual dry-run'
+        required: true
+        default: v0.0.0-manual
+
+# Needed for softprops/action-gh-release to create/update the GitHub Release.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-22.04 (not -latest) for a broader glibc floor on the Linux build.
+        os: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      SDL_VIDEODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so `git archive <tag>` works for the source asset
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          # Tag push -> GITHUB_REF_NAME is the tag (v1.2.3).
+          # Manual run -> GITHUB_REF_NAME is the branch (main), so use the input.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            V="${{ github.event.inputs.version }}"
+          else
+            V="${GITHUB_REF_NAME}"
+          fi
+          case "$V" in
+            v*) : ;;
+            *) echo "FAIL: version '$V' must start with 'v' (e.g. v1.0.0)"; exit 1 ;;
+          esac
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Manual runs are dry-runs -> publish as a draft you can inspect/delete.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "draft=false" >> "$GITHUB_OUTPUT"
+          fi
+          # A version with a pre-release suffix (v1.0.0-rc1, -beta, ...) -> mark prerelease.
+          case "$V" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "Release version: $V"
+
+      - name: Install SDL2 + CMake + patchelf (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsdl2-dev cmake patchelf
+
+      - name: Install SDL2 + CMake (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install sdl2 || brew upgrade sdl2 || true
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
+
+      - name: Configure + build
+        run: |
+          cmake -B build
+          cmake --build build
+
+      - name: Parity gate (must be green before we ship)
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package release tarball
+        run: ./tools/package_release.sh "${{ steps.ver.outputs.version }}" build dist
+
+      - name: Smoke-test the packaged artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARBALL=$(ls dist/doom-*.tar.gz)
+          WORK=$(mktemp -d)
+          tar -C "$WORK" -xzf "$TARBALL"
+          DIR=$(ls -d "$WORK"/doom-*)
+          echo "Booting $DIR headlessly..."
+          ( cd "$DIR" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 & echo $! > pid )
+          PID=$(cat "$DIR/pid")
+          sleep 8
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "OK: bundle booted and stayed alive (vendored SDL + IWAD found)"
+            kill "$PID" 2>/dev/null || true
+          else
+            echo "FAIL: bundle died during startup"; tail -40 "$DIR/boot.log"; exit 1
+          fi
+          # Sanity: the run log must show the engine reached play-loop init.
+          grep -q "P_Init" "$DIR/boot.log" || { echo "FAIL: engine did not init playloop"; tail -40 "$DIR/boot.log"; exit 1; }
+
+      - name: Build corresponding-source archive (GPLv2, Linux job only)
+        if: runner.os == 'Linux'
+        run: |
+          git archive --format=tar.gz \
+            --prefix="doom-${{ steps.ver.outputs.version }}-source/" \
+            -o "dist/doom-${{ steps.ver.outputs.version }}-source.tar.gz" HEAD
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: DOOM (Modernized) ${{ steps.ver.outputs.version }}
+          draft: ${{ steps.ver.outputs.draft }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: dist/*.tar.gz

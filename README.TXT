@@ -1,81 +1,124 @@
+================================================================================
+ DOOM — Modernized (2026)
+================================================================================
 
-Here it is, at long last.  The DOOM source code is released for your
-non-profit use.  You still need real DOOM data to work with this code.
-If you don't actually own a real copy of one of the DOOMs, you should
-still be able to find them at software stores.
+This is the 1997 id Software DOOM source release, brought up to a buildable,
+runnable, maintainable state on a modern 64-bit toolchain — without changing how
+the game plays. The software renderer, the 35 Hz deterministic simulation, the
+WAD data format, and demo/netgame determinism are all preserved byte-for-byte.
+Only the dead platform layer (X11 8-bit video, OSS `/dev/dsp` audio, the DOS
+drivers) was replaced, with a cross-platform SDL2 backend and a portable POSIX
+network transport.
 
-Many thanks to Bernd Kreimeier for taking the time to clean up the
-project and make sure that it actually works.  Projects tends to rot if
-you leave it alone for a few years, and it takes effort for someone to
-deal with it again.
+Original source (id Software, released 1997-12-23):
+    https://github.com/id-Software/DOOM
 
-The bad news:  this code only compiles and runs on linux.  We couldn't
-release the dos code because of a copyrighted sound library we used
-(wow, was that a mistake -- I write my own sound code now), and I
-honestly don't even know what happened to the port that microsoft did
-to windows.
-
-Still, the code is quite portable, and it should be straightforward to
-bring it up on just about any platform.
-
-I wrote this code a long, long time ago, and there are plenty of things
-that seem downright silly in retrospect (using polar coordinates for
-clipping comes to mind), but overall it should still be a usefull base
-to experiment and build on.
-
-The basic rendering concept -- horizontal and vertical lines of constant
-Z with fixed light shading per band was dead-on, but the implementation
-could be improved dramatically from the original code if it were
-revisited.  The way the rendering proceded from walls to floors to
-sprites could be collapsed into a single front-to-back walk of the bsp
-tree to collect information, then draw all the contents of a subsector
-on the way back up the tree.  It requires treating floors and ceilings
-as polygons, rather than just the gaps between walls, and it requires
-clipping sprite billboards into subsector fragments, but it would be
-The Right Thing.
-
-The movement and line of sight checking against the lines is one of the
-bigger misses that I look back on.  It is messy code that had some
-failure cases, and there was a vastly simpler (and faster) solution
-sitting in front of my face.  I used the BSP tree for rendering things,
-but I didn't realize at the time that it could also be used for
-environment testing.  Replacing the line of sight test with a bsp line
-clip would be pretty easy.  Sweeping volumes for movement gets a bit
-tougher, and touches on many of the challenges faced in quake / quake2
-with edge bevels on polyhedrons.
-
-Some project ideas:
-
-Port it to your favorite operating system.
-
-Add some rendering features -- transparency, look up / down, slopes,
-etc.
-
-Add some game features -- weapons, jumping, ducking, flying, etc.
-
-Create a packet server based internet game.
-
-Create a client / server based internet game.
-
-Do a 3D accelerated version.  On modern hardware (fast pentium + 3DFX)
-you probably wouldn't even need to be clever -- you could just draw the
-entire level and get reasonable speed.  With a touch of effort, it should
-easily lock at 60 fps (well, there are some issues with DOOM's 35 hz
-timebase...).  The biggest issues would probably be the non-power of two
-texture sizes and the walls composed of multiple textures.
+The bundled game data (freedoom1.wad) is from the Freedoom project — a free,
+BSD-licensed replacement for the commercial DOOM IWAD, so this build is playable
+out of the box without owning a copy of DOOM:
+    https://github.com/freedoom/freedoom
 
 
-I don't have a real good guess at how many people are going to be
-playing with this, but if significant projects are undertaken, it would
-be cool to see a level of community cooperation.  I know that most early
-projects are going to be rough hacks done in isolation, but I would be
-very pleased to see a coordinated 'net release of an improved, backwards
-compatable version of DOOM on multiple platforms next year.
+--------------------------------------------------------------------------------
+ Before / After — what was modernized
+--------------------------------------------------------------------------------
 
-Have fun.
+  Area          | Before (1997, Linux 1.10)        | After (2026)
+  --------------+----------------------------------+-------------------------------
+  Language      | K&R-era C, compiled with gcc     | C11 (C_STANDARD 11)
+  Build system  | GNU Make, Linux-only             | CMake (cmake -B build &&
+                |                                  |        cmake --build build)
+  Compiles?     | No — dies on <values.h>, libc5   | Yes — 64-bit clean, Linux+macOS
+  Video         | X11 Xlib + MIT-SHM, 8-bit        | SDL2 window; index->ARGB8888
+                | PseudoColor 320x200 (dead)       | palette LUT + gamma
+  Audio         | OSS /dev/dsp via a SEPARATE       | In-process SDL2 push audio;
+                | sndserver process (popen)        | DMX mixer ported verbatim
+  Networking    | BSD UDP (Linux) + DOS IPX and    | Portable POSIX BSD sockets
+                | serial drivers                   | (platform/posix), Linux+macOS
+  Platforms     | Linux only (32-bit era)          | Linux + macOS, 64-bit
+  Word size     | 32-bit / pointer assumptions     | 64-bit correct
+  Tests         | None                             | 5-target ctest parity gate
+  CI            | None                             | GitHub Actions (Linux + macOS)
+  Warnings      | -Wall only, noisy                | -Werror on all platform files
+  Releases      | Source tarball only              | Downloadable Mac + Linux builds
 
-John Carmack
-12-23-97
+Kept exactly as-is (this was NOT a rewrite of the game):
+  * Software renderer          r_* (BSP, segs, planes, things, draw)
+  * Playsim / game logic        p_*, g_game, info
+  * WAD + zone memory           w_wad, z_zone
+  * Fixed-point math and RNG    m_fixed, m_random, lookup tables
+  * 35 Hz tic model + ticcmd streams -> demos and netplay stay deterministic
+  * WAD lump format + 320x200 8-bit paletted framebuffer data contract
 
-Copyright (c) ZeniMax Media Inc.
-Licensed under the GNU General Public License 2.0.
+Dropped / archived:
+  * The separate OSS `sndserver` process (folded in-process; moved to legacy/)
+  * DOS real-mode `ipx/` and `sersrc/` drivers (unbuildable today; archived)
+
+
+--------------------------------------------------------------------------------
+ Correctness: how we know the modernization didn't change the game
+--------------------------------------------------------------------------------
+
+We deliberately used NO external source port (no Chocolate Doom, Crispy, PrBoom,
+etc.) and no period-correct legacy binary as an oracle. Instead the port is
+validated against ITSELF: our own engine records a native demo, and its
+world-state consistency checksum plus byte-exact software-framebuffer hashes are
+frozen and re-checked on every change. `ctest` runs five gates:
+
+  demo-parity   world-state consistency checksum   a00552bbf22274a2
+  frame-smoke   byte-exact indexed screens[0] hash  3e61b0f0c5dfd943
+  palette-lut   I_SetPalette index->ARGB8888 + gamma
+  demo-regen    tools/gen_demo.py reproduces the demo lump byte-exact
+  net-loopback  two real processes over 127.0.0.1    e8ca533e8baf4ad4
+
+
+--------------------------------------------------------------------------------
+ Build & run from source
+--------------------------------------------------------------------------------
+
+Requirements: a C11 compiler, CMake >= 3.16, and SDL2.
+    Linux:  sudo apt-get install -y build-essential cmake libsdl2-dev
+    macOS:  brew install cmake sdl2
+
+Build:
+    cmake -B build
+    cmake --build build
+
+Run (the engine finds its IWAD by hard-coded filename via DOOMWADDIR, NOT via
+-iwad). Present the bundled Freedoom WAD as doom1.wad:
+    mkdir -p run && ln -sf "$PWD/wads/freedoom1.wad" run/doom1.wad
+    DOOMWADDIR="$PWD/run" ./build/doom
+
+Test:
+    ctest --test-dir build --output-on-failure
+
+
+--------------------------------------------------------------------------------
+ Downloadable releases
+--------------------------------------------------------------------------------
+
+Prebuilt, ready-to-run macOS and Linux builds are published on the Releases page
+for each tagged version. Each archive bundles the engine, the required SDL2
+library, and Freedoom's game data (as doom1.wad) so it runs on download — see
+the README-RELEASE.txt inside each archive for platform notes (including the
+macOS Gatekeeper unquarantine step for unsigned builds).
+
+    https://github.com/samqbush/doomv2/releases
+
+
+--------------------------------------------------------------------------------
+ Licensing
+--------------------------------------------------------------------------------
+
+This project aggregates three independently-licensed works:
+
+  * The DOOM engine — GNU General Public License, version 2 (see LICENSE.TXT).
+    Copyright (c) ZeniMax Media Inc. Original release by id Software.
+  * The Freedoom game data (freedoom1.wad) — 3-clause BSD license
+    (see wads/FREEDOOM-COPYING.txt and wads/FREEDOOM-CREDITS.txt). Freedoom is
+    an independent project and does not endorse this build.
+  * SDL2 (bundled in binary releases) — zlib license.
+
+The engine binary is a GPLv2 work; the WAD is runtime data and SDL2 is a
+separate library, so they are combined only as an aggregate. Full corresponding
+source for every binary release is this repository at the matching tag.
