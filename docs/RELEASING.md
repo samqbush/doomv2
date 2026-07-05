@@ -27,15 +27,16 @@ template.
    git push origin v1.0.0
    ```
 4. The workflow builds on `ubuntu-22.04` + `macos-latest`, runs the full parity
-   gate (a red gate blocks the release), packages each platform tarball, smoke-
-   boots the packaged tarball headlessly, and publishes the GitHub Release with:
-   - `doom-<tag>-linux-x86_64.tar.gz`
-   - `doom-<tag>-macos-arm64.tar.gz`
-   - `doom-<tag>-source.tar.gz` (GPLv2 corresponding source)
+   gate (a red gate blocks the release), packages each platform's installable
+   app, smoke-boots it headlessly, and publishes the GitHub Release with:
+   - `DOOM-<tag>-x86_64.AppImage`   (Linux, single-file double-clickable)
+   - `doom-<tag>-macos-arm64.dmg`   (macOS, DOOM.app + drag-to-Applications)
+   - `doom-<tag>-source.tar.gz`     (GPLv2 corresponding source)
 5. Edit the published release body with the notes below.
 
 The **Run workflow** button also serves as a dry-run: supply a version, and it
-builds + packages + publishes without any local git.
+builds + packages + publishes a **draft** (no git tag) you can inspect/delete.
+Only a pushed `v*` tag produces a public, downloadable release.
 
 ## Release-notes template
 
@@ -48,12 +49,17 @@ demo/netgame determinism are preserved; only the dead platform layer was
 replaced.
 
 ### Downloads
-- **macOS (Apple Silicon):** `doom-<version>-macos-arm64.tar.gz`
-- **Linux (x86_64):** `doom-<version>-linux-x86_64.tar.gz`
+- **macOS (Apple Silicon):** `doom-<version>-macos-arm64.dmg`
+  Open the .dmg, drag DOOM.app to Applications, launch it. Unsigned build: on
+  first launch right-click DOOM.app -> Open (or `xattr -dr
+  com.apple.quarantine /Applications/DOOM.app`).
+- **Linux (x86_64):** `DOOM-<version>-x86_64.AppImage`
+  `chmod +x DOOM-*.AppImage && ./DOOM-*.AppImage` (needs FUSE; else add
+  `--appimage-extract-and-run`).
 
-Each archive is self-contained (engine + SDL2 + Freedoom `doom1.wad`). Extract,
-then run `./run-doom.sh`. See `README-RELEASE.txt` inside for platform notes
-(incl. the macOS Gatekeeper `xattr` step for this unsigned build).
+Each app is self-contained (engine + SDL2 + Freedoom `doom1.wad`). Config and
+saves go to a per-user data dir (macOS `~/Library/Application Support/DOOM`,
+Linux `${XDG_DATA_HOME:-~/.local/share}/doom`).
 
 ### Changes
 - <bullet per user-visible change>
@@ -61,7 +67,7 @@ then run `./run-doom.sh`. See `README-RELEASE.txt` inside for platform notes
 ### Verification
 - Full parity gate green on Linux + macOS (demo-parity `a00552bbf22274a2`,
   2-player `e8ca533e8baf4ad4`).
-- Packaged tarball smoke-booted headlessly in CI.
+- Packaged app smoke-booted headlessly in CI.
 
 ### Licensing
 Engine GPLv2 (source: `doom-<version>-source.tar.gz`); bundled game data is

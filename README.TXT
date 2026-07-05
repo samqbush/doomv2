@@ -40,7 +40,7 @@ out of the box without owning a copy of DOOM:
   Tests         | None                             | 5-target ctest parity gate
   CI            | None                             | GitHub Actions (Linux + macOS)
   Warnings      | -Wall only, noisy                | -Werror on all platform files
-  Releases      | Source tarball only              | Downloadable Mac + Linux builds
+  Releases      | Source tarball only              | Downloadable macOS .dmg + Linux AppImage
 
 Kept exactly as-is (this was NOT a rewrite of the game):
   * Software renderer          r_* (BSP, segs, planes, things, draw)
@@ -97,13 +97,25 @@ Test:
  Downloadable releases
 --------------------------------------------------------------------------------
 
-Prebuilt, ready-to-run macOS and Linux builds are published on the Releases page
-for each tagged version. Each archive bundles the engine, the required SDL2
-library, and Freedoom's game data (as doom1.wad) so it runs on download — see
-the README-RELEASE.txt inside each archive for platform notes (including the
-macOS Gatekeeper unquarantine step for unsigned builds).
+Prebuilt, ready-to-run macOS and Linux apps are published on the Releases page
+for each tagged version. Each app bundles the engine, the required SDL2 library,
+and Freedoom's game data (as doom1.wad) so it runs straight from the download —
+no system SDL2 install and no separate WAD needed.
 
     https://github.com/samqbush/doomv2/releases
+
+  * macOS (Apple Silicon):  doom-<version>-macos-arm64.dmg
+        Open the .dmg, drag DOOM.app to Applications, and launch it. This is an
+        unsigned build, so on first launch right-click DOOM.app -> Open (or run
+        `xattr -dr com.apple.quarantine /Applications/DOOM.app` once).
+
+  * Linux (x86_64):  DOOM-<version>-x86_64.AppImage
+        `chmod +x DOOM-*.AppImage && ./DOOM-*.AppImage`  (needs FUSE; if absent,
+        run `./DOOM-*.AppImage --appimage-extract-and-run`).
+
+Config and savegames are written to a per-user data dir (macOS
+~/Library/Application Support/DOOM, Linux ${XDG_DATA_HOME:-~/.local/share}/doom)
+so the app itself stays read-only.
 
 
 --------------------------------------------------------------------------------
