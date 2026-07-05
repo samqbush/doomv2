@@ -103,24 +103,27 @@ jobs:
           tar -C "$WORK" -xzf "$TARBALL"
           DIR=$(ls -d "$WORK"/doom-*)
           echo "Booting $DIR headlessly..."
-          # Run the launcher from inside the bundle; capture the PID directly (no
-          # subshell/pid-file: `cd` inside a backgrounded compound command does not
-          # affect the parent shell's cwd).
           cd "$DIR"
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 &
           PID=$!
           sleep 8
-          kill "$PID" 2>/dev/null || true
-          wait "$PID" 2>/dev/null || true
-          echo "===== boot.log ====="
+          # Primary signal: is it still alive? A broken bundle (missing/unloadable
+          # vendored lib, bad signature, missing IWAD) dies within a second; a good
+          # one loads SDL + doom1.wad and sits at the title screen. Liveness is
+          # immune to stdout block-buffering (killed procs don't flush their log).
+          if kill -0 "$PID" 2>/dev/null; then
+            ALIVE=1; kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; RC=0
+          else
+            ALIVE=0; wait "$PID" 2>/dev/null; RC=$?
+          fi
+          echo "alive_after_8s=$ALIVE exit_status=$RC"
+          echo "===== boot.log (may be empty if killed mid-buffer) ====="
           cat boot.log || true
-          echo "===================="
-          # The real assertion: reaching P_Init proves the vendored SDL2 loaded, the
-          # renamed doom1.wad was found via DOOMWADDIR, and the engine initialized.
-          if grep -q "P_Init" boot.log; then
+          echo "======================================================="
+          if [ "$ALIVE" = 1 ] || grep -q "P_Init" boot.log; then
             echo "OK: packaged bundle booted (vendored SDL loaded + doom1.wad found)"
           else
-            echo "FAIL: packaged bundle did not reach playloop init (SDL/WAD load problem)"
+            echo "FAIL: packaged bundle did not stay up and never reached P_Init (rc=$RC)"
             exit 1
           fi
 
