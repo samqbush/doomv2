@@ -126,8 +126,9 @@ game data are all inside this folder. No system SDL2 install is required.
 
 macOS note (unsigned build):
     This binary is ad-hoc signed but NOT notarized, so Gatekeeper will block it
-    on first launch. Clear the download quarantine once, then run:
-        xattr -dr com.apple.quarantine "$(pwd)"
+    on first launch. From inside this extracted folder, clear the download
+    quarantine once, then run:
+        xattr -dr com.apple.quarantine .
         ./run-doom.sh
 
 Linux note:
