@@ -61,27 +61,24 @@ if [ "$OS" = linux ]; then
   # SDL2 copyright (apt ships it here); fall back to a pointer if absent.
   SDL_LIC="$(ls /usr/share/doc/libsdl2-2.0-0/copyright 2>/dev/null || true)"
 else
-  # macOS: change the binary's reference to the vendored dylib, ad-hoc re-sign.
+  # macOS: vendor libSDL2 AND all its non-system transitive deps. Homebrew's
+  # `sdl2` is now sdl2-compat, whose libSDL2-2.0.0.dylib pulls libSDL3 -- copying
+  # only the directly-linked dylib leaves dyld unable to find libSDL3 at runtime
+  # (silent load failure). dylibbundler follows the whole graph, copies every
+  # non-system dylib into lib/, and rewrites install names to @executable_path/lib
+  # (which resolves the same for the executable and every nested dylib, since we
+  # always launch ./doom from the bundle root).
   SDL_REF="$(otool -L "$STAGE/doom" | awk '/libSDL2/{print $1; exit}')"
   [ -n "$SDL_REF" ] || { echo "FAIL: binary does not link libSDL2 (otool)"; exit 1; }
-  SDL_REAL="$(readlink -f "$SDL_REF" 2>/dev/null || echo "$SDL_REF")"
-  [ -f "$SDL_REAL" ] || { echo "FAIL: SDL2 dylib not found: $SDL_REAL"; exit 1; }
-  DYLIB="$(basename "$SDL_REF")"    # libSDL2-2.0.0.dylib
-  cp "$SDL_REAL" "$STAGE/lib/$DYLIB"
-  chmod u+w "$STAGE/lib/$DYLIB"
-  install_name_tool -id "@loader_path/lib/$DYLIB" "$STAGE/lib/$DYLIB"
-  install_name_tool -change "$SDL_REF" "@loader_path/lib/$DYLIB" "$STAGE/doom"
-  # Strip any leftover LC_RPATH the linker baked in pointing at Homebrew/build dirs.
-  while read -r RP; do
-    [ -n "$RP" ] || continue
-    if echo "$RP" | grep -Eq "$FORBIDDEN"; then
-      install_name_tool -delete_rpath "$RP" "$STAGE/doom" 2>/dev/null || true
-    fi
-  done < <(otool -l "$STAGE/doom" | awk '/LC_RPATH/{f=1} f&&/path /{print $2; f=0}')
-  # install_name_tool invalidates the signature -> ad-hoc re-sign both, then verify.
-  codesign --force --sign - "$STAGE/lib/$DYLIB"
+  command -v dylibbundler >/dev/null || { echo "FAIL: dylibbundler required on macOS (brew install dylibbundler)"; exit 1; }
+  ( cd "$STAGE" && dylibbundler -of -cd -b -x ./doom -d ./lib -p @executable_path/lib/ >/dev/null )
+  # dylibbundler rewrote load commands -> every Mach-O signature is now invalid.
+  # Ad-hoc re-sign each vendored dylib and the binary, then verify.
+  for f in "$STAGE"/lib/*.dylib; do codesign --force --sign - "$f"; done
   codesign --force --sign - "$STAGE/doom"
   codesign --verify --strict "$STAGE/doom" || { echo "FAIL: ad-hoc codesign verify"; exit 1; }
+  # SDL2 license: locate the real SDL2 keg (works for sdl2 or sdl2-compat).
+  SDL_REAL="$(readlink -f "$SDL_REF" 2>/dev/null || echo "$SDL_REF")"
   SDL_LIC="$(ls "$(dirname "$SDL_REAL")/../LICENSE.txt" 2>/dev/null || true)"
 fi
 
@@ -163,7 +160,12 @@ if [ "$OS" = linux ]; then
   AUDIT="$(readelf -d "$STAGE/doom"; ldd "$STAGE/doom" 2>&1 || true)"
   echo "$AUDIT" | grep -q "not found" && { echo "FAIL: unresolved lib in bundle"; echo "$AUDIT"; exit 1; }
 else
+  # Audit the binary AND every vendored dylib (dylibbundler-copied SDL2/SDL3/...).
   AUDIT="$(otool -L "$STAGE/doom"; otool -l "$STAGE/doom" | grep -A2 LC_RPATH || true)"
+  for dy in "$STAGE"/lib/*.dylib; do
+    AUDIT="$AUDIT
+$(otool -L "$dy")"
+  done
 fi
 if echo "$AUDIT" | grep -Eq "$FORBIDDEN"; then
   echo "FAIL: binary leaks an absolute build/Homebrew path:"

@@ -80,7 +80,7 @@ jobs:
       - name: Install SDL2 + CMake (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 || brew upgrade sdl2 || true
+          brew install sdl2 dylibbundler || brew upgrade sdl2 dylibbundler || true
           echo "CMAKE_PREFIX_PATH=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
 
       - name: Configure + build
