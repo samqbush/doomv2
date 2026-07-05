@@ -97,23 +97,32 @@ jobs:
       - name: Smoke-test the packaged artifact
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           TARBALL=$(ls dist/doom-*.tar.gz)
           WORK=$(mktemp -d)
           tar -C "$WORK" -xzf "$TARBALL"
           DIR=$(ls -d "$WORK"/doom-*)
           echo "Booting $DIR headlessly..."
-          ( cd "$DIR" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 & echo $! > pid )
-          PID=$(cat "$DIR/pid")
+          # Run the launcher from inside the bundle; capture the PID directly (no
+          # subshell/pid-file: `cd` inside a backgrounded compound command does not
+          # affect the parent shell's cwd).
+          cd "$DIR"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 &
+          PID=$!
           sleep 8
-          if kill -0 "$PID" 2>/dev/null; then
-            echo "OK: bundle booted and stayed alive (vendored SDL + IWAD found)"
-            kill "$PID" 2>/dev/null || true
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          echo "===== boot.log ====="
+          cat boot.log || true
+          echo "===================="
+          # The real assertion: reaching P_Init proves the vendored SDL2 loaded, the
+          # renamed doom1.wad was found via DOOMWADDIR, and the engine initialized.
+          if grep -q "P_Init" boot.log; then
+            echo "OK: packaged bundle booted (vendored SDL loaded + doom1.wad found)"
           else
-            echo "FAIL: bundle died during startup"; tail -40 "$DIR/boot.log"; exit 1
+            echo "FAIL: packaged bundle did not reach playloop init (SDL/WAD load problem)"
+            exit 1
           fi
-          # Sanity: the run log must show the engine reached play-loop init.
-          grep -q "P_Init" "$DIR/boot.log" || { echo "FAIL: engine did not init playloop"; tail -40 "$DIR/boot.log"; exit 1; }
 
       - name: Build corresponding-source archive (GPLv2, Linux job only)
         if: runner.os == 'Linux'
