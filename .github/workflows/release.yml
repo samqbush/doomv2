@@ -71,11 +71,17 @@ jobs:
           esac
           echo "Release version: $V"
 
-      - name: Install SDL2 + CMake + patchelf (Linux)
+      - name: Install SDL2 + CMake + patchelf + appimagetool (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libsdl2-dev cmake patchelf
+          sudo apt-get install -y --no-install-recommends libsdl2-dev cmake patchelf file
+          # appimagetool builds the single-file .AppImage. It's itself an AppImage;
+          # APPIMAGE_EXTRACT_AND_RUN lets it run on a runner without FUSE.
+          curl -fL -o /usr/local/bin/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
       - name: Install SDL2 + CMake (macOS)
         if: runner.os == 'macOS'
@@ -91,27 +97,39 @@ jobs:
       - name: Parity gate (must be green before we ship)
         run: ctest --test-dir build --output-on-failure
 
-      - name: Package release tarball
+      - name: Package installable artifact (.dmg / .AppImage)
         run: ./tools/package_release.sh "${{ steps.ver.outputs.version }}" build dist
 
       - name: Smoke-test the packaged artifact
         shell: bash
         run: |
           set -euo pipefail
-          TARBALL=$(ls dist/doom-*.tar.gz)
           WORK=$(mktemp -d)
-          tar -C "$WORK" -xzf "$TARBALL"
-          DIR=$(ls -d "$WORK"/doom-*)
-          echo "Booting $DIR headlessly..."
-          cd "$DIR"
-          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 &
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            # Mount the .dmg, copy DOOM.app out, launch via the bundle launcher.
+            DMG=$(ls dist/*.dmg)
+            MNT=$(mktemp -d)
+            hdiutil attach "$DMG" -nobrowse -mountpoint "$MNT" >/dev/null
+            cp -R "$MNT/DOOM.app" "$WORK/DOOM.app"
+            hdiutil detach "$MNT" >/dev/null
+            LAUNCH=("$WORK/DOOM.app/Contents/MacOS/doom-launcher")
+          else
+            # Run the AppImage self-extracted (runners may lack FUSE). Use an
+            # absolute path: we cd into $WORK below, so a repo-relative path breaks.
+            APPIMG="$(pwd)/$(ls dist/*.AppImage)"
+            chmod +x "$APPIMG"
+            LAUNCH=("$APPIMG" --appimage-extract-and-run)
+          fi
+          echo "Booting ${LAUNCH[0]} headlessly..."
+          cd "$WORK"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "${LAUNCH[@]}" -warp 1 1 >boot.log 2>&1 &
           PID=$!
-          # Primary signal: is it still alive? A broken bundle (missing/unloadable
+          # Primary signal: is it still alive? A broken app (missing/unloadable
           # vendored lib, bad signature, missing IWAD) dies within a second; a good
           # one loads SDL + doom1.wad and sits at the title screen. Liveness is
           # immune to stdout block-buffering (killed procs don't flush their log).
           # Poll for up to 10s (bounded) instead of a single fixed sleep so a slow
-          # runner isn't misjudged: a healthy bundle survives every tick.
+          # runner isn't misjudged: a healthy app survives every tick.
           ALIVE=0
           for _ in $(seq 1 10); do
             sleep 1
@@ -129,9 +147,9 @@ jobs:
           cat boot.log || true
           echo "======================================================="
           if [ "$ALIVE" = 1 ] || grep -q "P_Init" boot.log; then
-            echo "OK: packaged bundle booted (vendored SDL loaded + doom1.wad found)"
+            echo "OK: packaged app booted (vendored SDL loaded + doom1.wad found)"
           else
-            echo "FAIL: packaged bundle did not stay up and never reached P_Init (rc=$RC)"
+            echo "FAIL: packaged app did not stay up and never reached P_Init (rc=$RC)"
             exit 1
           fi
 
@@ -149,5 +167,8 @@ jobs:
           name: DOOM (Modernized) ${{ steps.ver.outputs.version }}
           draft: ${{ steps.ver.outputs.draft }}
           prerelease: ${{ steps.ver.outputs.prerelease }}
-          fail_on_unmatched_files: true
-          files: dist/*.tar.gz
+          fail_on_unmatched_files: false
+          files: |
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*-source.tar.gz
