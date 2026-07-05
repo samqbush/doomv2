@@ -83,11 +83,27 @@ jobs:
           chmod +x /usr/local/bin/appimagetool
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
-      - name: Install SDL2 + CMake (macOS)
+      - name: Install real SDL2 (from source) + tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 dylibbundler || brew upgrade sdl2 dylibbundler || true
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
+          brew list dylibbundler >/dev/null 2>&1 || brew install dylibbundler
+          # Homebrew's `sdl2` is now an ALIAS for sdl2-compat -- a shim whose
+          # libSDL2-2.0.0.dylib dlopens the real libSDL3 at runtime. dylibbundler
+          # only follows link-time deps, so it can't vendor that dlopen'd SDL3; the
+          # packaged .app then abort()s in SDL2 `dllinit` on any Mac lacking a
+          # Homebrew SDL3. Build REAL SDL2 from source instead: its
+          # libSDL2-2.0.0.dylib is fully self-contained (no SDL3), so the vendored
+          # bundle runs on a clean machine.
+          SDL_VER=2.30.11
+          curl -fsSL -o /tmp/SDL2.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VER}/SDL2-${SDL_VER}.tar.gz"
+          rm -rf /tmp/sdl2src && mkdir -p /tmp/sdl2src
+          tar -xzf /tmp/SDL2.tar.gz -C /tmp/sdl2src --strip-components=1
+          cmake -S /tmp/sdl2src -B /tmp/sdl2build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOME/sdl2-prefix" \
+            -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST=OFF
+          cmake --build /tmp/sdl2build --target install -j
+          echo "CMAKE_PREFIX_PATH=$HOME/sdl2-prefix" >> "$GITHUB_ENV"
 
       - name: Configure + build
         run: |

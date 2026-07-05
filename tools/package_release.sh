@@ -63,25 +63,64 @@ if [ "$OS" = linux ]; then
   # SDL2 copyright (apt ships it here); fall back to a pointer if absent.
   SDL_LIC="$(ls /usr/share/doc/libsdl2-2.0-0/copyright 2>/dev/null || true)"
 else
-  # macOS: vendor libSDL2 AND all its non-system transitive deps. Homebrew's
-  # `sdl2` is now sdl2-compat, whose libSDL2-2.0.0.dylib pulls libSDL3 -- copying
-  # only the directly-linked dylib leaves dyld unable to find libSDL3 at runtime
-  # (silent load failure). dylibbundler follows the whole graph, copies every
-  # non-system dylib into lib/, and rewrites install names to @executable_path/lib
-  # (which resolves the same for the executable and every nested dylib, since we
-  # always launch ./doom from the bundle root).
+  # macOS: vendor libSDL2 AND all its non-system transitive deps. The release
+  # build links REAL SDL2 (built from source; see .github/workflows/release.yml),
+  # NOT Homebrew's `sdl2` -- which is now an alias for sdl2-compat, a shim whose
+  # libSDL2-2.0.0.dylib dlopens libSDL3 at runtime. dylibbundler only follows
+  # link-time deps, so it can't vendor a dlopen'd SDL3; a sdl2-compat bundle then
+  # abort()s in SDL2 `dllinit` on any Mac lacking a system SDL3. dylibbundler
+  # still walks the whole graph here, copies every non-system dylib into lib/, and
+  # rewrites install names to @executable_path/lib (which resolves the same for
+  # the executable and every nested dylib, since we always launch ./doom from the
+  # bundle root).
   SDL_REF="$(otool -L "$STAGE/doom" | awk '/libSDL2/{print $1; exit}')"
   [ -n "$SDL_REF" ] || { echo "FAIL: binary does not link libSDL2 (otool)"; exit 1; }
   command -v dylibbundler >/dev/null || { echo "FAIL: dylibbundler required on macOS (brew install dylibbundler)"; exit 1; }
-  ( cd "$STAGE" && dylibbundler -of -cd -b -x ./doom -d ./lib -p @executable_path/lib/ >/dev/null )
+  # Resolve the on-disk directory holding the real libSDL2 so dylibbundler can
+  # find it. A source-built SDL2 uses an @rpath install name (SDL_REF starts with
+  # @rpath/@loader_path), which dylibbundler cannot resolve on its own -- without
+  # a `-s` search path it drops into an interactive "does not exist" prompt loop.
+  # Probe, in order: an absolute install name, $CMAKE_PREFIX_PATH/lib (set by the
+  # build/CI env), then the binary's baked-in LC_RPATH entries (expanding
+  # @loader_path/@executable_path relative to the binary's own dir). We do NOT
+  # fall back to Homebrew: `brew --prefix sdl2` is sdl2-compat, and bundling it
+  # would silently reproduce the SDL3 dllinit abort() this fix exists to prevent.
+  SDL_LEAF="$(basename "$SDL_REF")"
+  BIN_DIR="$(cd "$(dirname "$STAGE/doom")" && pwd)"
+  SDL_LIBDIR=""
+  case "$SDL_REF" in
+    /*) SDL_LIBDIR="$(dirname "$SDL_REF")" ;;
+  esac
+  if [ -z "$SDL_LIBDIR" ] && [ -n "${CMAKE_PREFIX_PATH:-}" ] && [ -f "$CMAKE_PREFIX_PATH/lib/$SDL_LEAF" ]; then
+    SDL_LIBDIR="$CMAKE_PREFIX_PATH/lib"
+  fi
+  if [ -z "$SDL_LIBDIR" ]; then
+    while read -r rp; do
+      [ -n "$rp" ] || continue
+      # @loader_path and @executable_path both resolve to the binary's dir here
+      # (the binary is the loader); expand them so the file test can succeed.
+      case "$rp" in
+        @loader_path/*|@executable_path/*) rp="$BIN_DIR/${rp#@*/}" ;;
+        @loader_path|@executable_path)     rp="$BIN_DIR" ;;
+      esac
+      if [ -f "$rp/$SDL_LEAF" ]; then SDL_LIBDIR="$rp"; break; fi
+    done < <(otool -l "$STAGE/doom" | awk '/LC_RPATH/{r=1;next} r&&/path/{print $2;r=0}')
+  fi
+  [ -n "$SDL_LIBDIR" ] || { echo "FAIL: could not locate a self-contained on-disk $SDL_LEAF (ref: $SDL_REF). Set CMAKE_PREFIX_PATH to a real SDL2 (not Homebrew sdl2-compat)."; exit 1; }
+  echo "Using SDL2 from: $SDL_LIBDIR/$SDL_LEAF"
+  ( cd "$STAGE" && dylibbundler -of -cd -b -x ./doom -d ./lib -p @executable_path/lib/ -s "$SDL_LIBDIR" >/dev/null )
   # dylibbundler rewrote load commands -> every Mach-O signature is now invalid.
   # Ad-hoc re-sign each vendored dylib and the binary, then verify.
   for f in "$STAGE"/lib/*.dylib; do codesign --force --sign - "$f"; done
   codesign --force --sign - "$STAGE/doom"
   codesign --verify --strict "$STAGE/doom" || { echo "FAIL: ad-hoc codesign verify"; exit 1; }
-  # SDL2 license: locate the real SDL2 keg (works for sdl2 or sdl2-compat).
-  SDL_REAL="$(readlink -f "$SDL_REF" 2>/dev/null || echo "$SDL_REF")"
-  SDL_LIC="$(ls "$(dirname "$SDL_REAL")/../LICENSE.txt" 2>/dev/null || true)"
+  # SDL2 license: probe common locations relative to the resolved lib dir
+  # (source-built SDL2 puts LICENSE.txt at the prefix root; Homebrew keeps it in
+  # the keg). Falls back to a pointer file below if none is found.
+  SDL_LIC=""
+  for cand in "$SDL_LIBDIR/../LICENSE.txt" "$SDL_LIBDIR/../share/licenses/SDL2/LICENSE.txt" "$SDL_LIBDIR/LICENSE.txt"; do
+    [ -f "$cand" ] && { SDL_LIC="$cand"; break; }
+  done
 fi
 
 # ---- game data + license files ---------------------------------------------
