@@ -114,8 +114,9 @@ jobs:
             hdiutil detach "$MNT" >/dev/null
             LAUNCH=("$WORK/DOOM.app/Contents/MacOS/doom-launcher")
           else
-            # Run the AppImage self-extracted (runners may lack FUSE).
-            APPIMG=$(ls dist/*.AppImage)
+            # Run the AppImage self-extracted (runners may lack FUSE). Use an
+            # absolute path: we cd into $WORK below, so a repo-relative path breaks.
+            APPIMG="$(pwd)/$(ls dist/*.AppImage)"
             chmod +x "$APPIMG"
             LAUNCH=("$APPIMG" --appimage-extract-and-run)
           fi
