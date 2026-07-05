@@ -80,7 +80,7 @@ jobs:
       - name: Install SDL2 + CMake (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 || brew upgrade sdl2 || true
+          brew install sdl2 dylibbundler || brew upgrade sdl2 dylibbundler || true
           echo "CMAKE_PREFIX_PATH=$(brew --prefix sdl2)" >> "$GITHUB_ENV"
 
       - name: Configure + build
@@ -103,17 +103,37 @@ jobs:
           tar -C "$WORK" -xzf "$TARBALL"
           DIR=$(ls -d "$WORK"/doom-*)
           echo "Booting $DIR headlessly..."
-          ( cd "$DIR" && SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 & echo $! > pid )
-          PID=$(cat "$DIR/pid")
-          sleep 8
-          if kill -0 "$PID" 2>/dev/null; then
-            echo "OK: bundle booted and stayed alive (vendored SDL + IWAD found)"
+          cd "$DIR"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 &
+          PID=$!
+          # Primary signal: is it still alive? A broken bundle (missing/unloadable
+          # vendored lib, bad signature, missing IWAD) dies within a second; a good
+          # one loads SDL + doom1.wad and sits at the title screen. Liveness is
+          # immune to stdout block-buffering (killed procs don't flush their log).
+          # Poll for up to 10s (bounded) instead of a single fixed sleep so a slow
+          # runner isn't misjudged: a healthy bundle survives every tick.
+          ALIVE=0
+          for _ in $(seq 1 10); do
+            sleep 1
+            if kill -0 "$PID" 2>/dev/null; then ALIVE=1; else ALIVE=0; break; fi
+          done
+          RC=0
+          if [ "$ALIVE" = 1 ]; then
             kill "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
           else
-            echo "FAIL: bundle died during startup"; tail -40 "$DIR/boot.log"; exit 1
+            wait "$PID" 2>/dev/null || RC=$?
           fi
-          # Sanity: the run log must show the engine reached play-loop init.
-          grep -q "P_Init" "$DIR/boot.log" || { echo "FAIL: engine did not init playloop"; tail -40 "$DIR/boot.log"; exit 1; }
+          echo "alive_after_poll=$ALIVE exit_status=$RC"
+          echo "===== boot.log (may be empty if killed mid-buffer) ====="
+          cat boot.log || true
+          echo "======================================================="
+          if [ "$ALIVE" = 1 ] || grep -q "P_Init" boot.log; then
+            echo "OK: packaged bundle booted (vendored SDL loaded + doom1.wad found)"
+          else
+            echo "FAIL: packaged bundle did not stay up and never reached P_Init (rc=$RC)"
+            exit 1
+          fi
 
       - name: Build corresponding-source archive (GPLv2, Linux job only)
         if: runner.os == 'Linux'
