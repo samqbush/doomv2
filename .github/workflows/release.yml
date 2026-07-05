@@ -97,7 +97,7 @@ jobs:
       - name: Smoke-test the packaged artifact
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           TARBALL=$(ls dist/doom-*.tar.gz)
           WORK=$(mktemp -d)
           tar -C "$WORK" -xzf "$TARBALL"
@@ -106,17 +106,25 @@ jobs:
           cd "$DIR"
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run-doom.sh -warp 1 1 >boot.log 2>&1 &
           PID=$!
-          sleep 8
           # Primary signal: is it still alive? A broken bundle (missing/unloadable
           # vendored lib, bad signature, missing IWAD) dies within a second; a good
           # one loads SDL + doom1.wad and sits at the title screen. Liveness is
           # immune to stdout block-buffering (killed procs don't flush their log).
-          if kill -0 "$PID" 2>/dev/null; then
-            ALIVE=1; kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; RC=0
+          # Poll for up to 10s (bounded) instead of a single fixed sleep so a slow
+          # runner isn't misjudged: a healthy bundle survives every tick.
+          ALIVE=0
+          for _ in $(seq 1 10); do
+            sleep 1
+            if kill -0 "$PID" 2>/dev/null; then ALIVE=1; else ALIVE=0; break; fi
+          done
+          RC=0
+          if [ "$ALIVE" = 1 ]; then
+            kill "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
           else
-            ALIVE=0; wait "$PID" 2>/dev/null; RC=$?
+            wait "$PID" 2>/dev/null || RC=$?
           fi
-          echo "alive_after_8s=$ALIVE exit_status=$RC"
+          echo "alive_after_poll=$ALIVE exit_status=$RC"
           echo "===== boot.log (may be empty if killed mid-buffer) ====="
           cat boot.log || true
           echo "======================================================="
