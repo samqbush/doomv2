@@ -81,8 +81,12 @@ else
   # @rpath/@loader_path), which dylibbundler cannot resolve on its own -- without
   # a `-s` search path it drops into an interactive "does not exist" prompt loop.
   # Probe, in order: an absolute install name, $CMAKE_PREFIX_PATH/lib (set by the
-  # build/CI env), the binary's baked-in LC_RPATH entries, then Homebrew.
+  # build/CI env), then the binary's baked-in LC_RPATH entries (expanding
+  # @loader_path/@executable_path relative to the binary's own dir). We do NOT
+  # fall back to Homebrew: `brew --prefix sdl2` is sdl2-compat, and bundling it
+  # would silently reproduce the SDL3 dllinit abort() this fix exists to prevent.
   SDL_LEAF="$(basename "$SDL_REF")"
+  BIN_DIR="$(cd "$(dirname "$STAGE/doom")" && pwd)"
   SDL_LIBDIR=""
   case "$SDL_REF" in
     /*) SDL_LIBDIR="$(dirname "$SDL_REF")" ;;
@@ -92,16 +96,17 @@ else
   fi
   if [ -z "$SDL_LIBDIR" ]; then
     while read -r rp; do
-      [ -n "$rp" ] && [ -f "$rp/$SDL_LEAF" ] && { SDL_LIBDIR="$rp"; break; }
-    done <<EOF
-$(otool -l "$STAGE/doom" | awk '/LC_RPATH/{r=1;next} r&&/path/{print $2;r=0}')
-EOF
+      [ -n "$rp" ] || continue
+      # @loader_path and @executable_path both resolve to the binary's dir here
+      # (the binary is the loader); expand them so the file test can succeed.
+      case "$rp" in
+        @loader_path/*|@executable_path/*) rp="$BIN_DIR/${rp#@*/}" ;;
+        @loader_path|@executable_path)     rp="$BIN_DIR" ;;
+      esac
+      if [ -f "$rp/$SDL_LEAF" ]; then SDL_LIBDIR="$rp"; break; fi
+    done < <(otool -l "$STAGE/doom" | awk '/LC_RPATH/{r=1;next} r&&/path/{print $2;r=0}')
   fi
-  if [ -z "$SDL_LIBDIR" ] && command -v brew >/dev/null 2>&1; then
-    cand="$(brew --prefix sdl2 2>/dev/null)/lib"
-    [ -f "$cand/$SDL_LEAF" ] && SDL_LIBDIR="$cand"
-  fi
-  [ -n "$SDL_LIBDIR" ] || { echo "FAIL: could not locate on-disk $SDL_LEAF (ref: $SDL_REF)"; exit 1; }
+  [ -n "$SDL_LIBDIR" ] || { echo "FAIL: could not locate a self-contained on-disk $SDL_LEAF (ref: $SDL_REF). Set CMAKE_PREFIX_PATH to a real SDL2 (not Homebrew sdl2-compat)."; exit 1; }
   echo "Using SDL2 from: $SDL_LIBDIR/$SDL_LEAF"
   ( cd "$STAGE" && dylibbundler -of -cd -b -x ./doom -d ./lib -p @executable_path/lib/ -s "$SDL_LIBDIR" >/dev/null )
   # dylibbundler rewrote load commands -> every Mach-O signature is now invalid.

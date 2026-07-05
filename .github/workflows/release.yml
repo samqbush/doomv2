@@ -86,7 +86,7 @@ jobs:
       - name: Install real SDL2 (from source) + tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install dylibbundler || brew upgrade dylibbundler || true
+          brew list dylibbundler >/dev/null 2>&1 || brew install dylibbundler
           # Homebrew's `sdl2` is now an ALIAS for sdl2-compat -- a shim whose
           # libSDL2-2.0.0.dylib dlopens the real libSDL3 at runtime. dylibbundler
           # only follows link-time deps, so it can't vendor that dlopen'd SDL3; the
