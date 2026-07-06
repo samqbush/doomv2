@@ -26,6 +26,10 @@
 #include "doomdef.h"
 #include "d_event.h"
 
+// Size of the gamekeydown[] key-state array (indexed by keycode).
+// Defined here so g_game.c and m_menu.c share one value.
+#define NUMKEYS		256
+
 
 
 //

@@ -43,7 +43,7 @@ demonstrably met.
 | Loopback net test (Phase 5 ✅) | `ctest --test-dir build -R net-loopback` *(2 real `doom` procs over 127.0.0.1 UDP via `platform/posix/i_net_posix.c`; scripted per-node input; asserts lockstep held (no consistency failure) + self-frozen 2-player checksum `e8ca533e8baf4ad4`)* |
 | Lint / Format / Typecheck | **none** — rely on `-Wall -Wextra` (and `-Werror` on platform files, Phase 3 ✅) |
 | Package a release locally | `./tools/package_release.sh <version> [build-dir] [out-dir]` *(builds an installable app: macOS `.dmg` (DOOM.app, drag-to-Applications) or Linux `.AppImage`; bundles engine + vendored SDL2 + Freedoom `doom1.wad` + icon + licenses; launcher points `DOOMWADDIR` at read-only data and `HOME`+cwd at a per-user data dir; macOS ad-hoc-signs; fails on any leaked build/Homebrew path)* |
-| Cut a downloadable release | **Push a tag: `git tag vX.Y.Z origin/main && git push origin vX.Y.Z`** → publishes a public release. *(The Actions → "Release" → Run workflow button is a **draft dry-run** only — no git tag, no public download URLs.)* |
+| Cut a downloadable release | **Bump the repo-root `VERSION` file (e.g. `v1.2.0`) in your PR, then merge to `main`** → the Release workflow tags + publishes a public release automatically. *(A pushed `v*` tag also works; the Actions → "Release" → Run workflow button is a **draft dry-run** only — no git tag, no public download URLs.)* |
 
 CI (`.github/workflows/ci.yml`, Phase 3 ✅) builds on **Linux + macOS** and runs
 `build → ctest` (the full 5-target parity gate, incl. `net-loopback` Phase 5 ✅)
@@ -55,36 +55,46 @@ Branches → protect `main`).
 
 Downloadable macOS `.dmg` + Linux `.AppImage` builds are published by
 `.github/workflows/release.yml`. **`main` is branch-protected — you never push
-commits to it.** A **tag** is a separate ref from the `main` branch, so branch
-protection does **not** block it. Trigger a release from already-merged,
-CI-green `main`:
+commits to it.** Releases are cut **automatically on merge to `main`**, driven
+by the repo-root **`VERSION`** file.
 
-**Push a version tag (the only path that publishes a public release):**
+**The release flow — bump `VERSION` in your PR:**
 
-```
-git tag v1.0.0 origin/main     # tag the current merged main tip
-git push origin v1.0.0         # pushes only the tag ref, not the branch
-```
+1. In every PR that should ship, edit the repo-root **`VERSION`** file to the
+   new version (semantic `vMAJOR.MINOR.PATCH`, e.g. `v1.2.0`). **This is a
+   required step when opening a PR that adds user-visible change** — if you
+   forget, no release is published.
+2. Merge the PR to `main` (squash, via the normal branch-protected PR flow).
+3. On that push to `main` the Release workflow reads `VERSION`; if that version
+   has **not** been released yet, it creates the `vX.Y.Z` tag and publishes a
+   public, downloadable release. `softprops/action-gh-release` creates the tag
+   via `GITHUB_TOKEN`, so it does not recursively re-trigger the workflow.
 
-On a tag push the workflow sets `draft=false` and `softprops/action-gh-release`
-attaches the assets to the now-existing tag → a public, downloadable release.
+A merge that does **not** change `VERSION` still runs the workflow but **skips
+publishing** (the version's tag already exists) — so it is safe and idempotent;
+only a bump actually ships. The expensive build matrix is gated behind a cheap
+`prepare` job so no-op merges cost almost nothing.
 
-**Dry-run only — the button:** GitHub → **Actions** → **Release** → **Run
-workflow** (branch `main`, version `vX.Y.Z`) builds + packages, but publishes a
-**draft** with **no git tag** (asset download URLs 404 until published). Use it
-to inspect artifacts, not to ship. Delete the draft afterward.
+**Version bump rule** (semantic `vMAJOR.MINOR.PATCH`): bump **PATCH** for fixes,
+**MINOR** for new user-visible capability, **MAJOR** for a break in the WAD/demo
+data contract or CLI. Use `-rcN`/`-beta` suffixes for pre-releases.
 
-Either path runs the workflow: build on `ubuntu-22.04` + `macos-latest`, run the
-**full parity gate** (a red gate blocks the release), package each platform's
-installable app via `tools/package_release.sh` (macOS `.dmg`, Linux
+**Alternative triggers:**
+- **Pushed `v*` tag** (still supported, e.g. to re-cut a release from an
+  arbitrary commit): `git tag v1.2.0 origin/main && git push origin v1.2.0` →
+  publishes using the tag name.
+- **Dry-run — the button:** GitHub → **Actions** → **Release** → **Run
+  workflow** (version `vX.Y.Z`) builds + packages but publishes a **draft** with
+  **no git tag** (asset download URLs 404 until published). Use it to inspect
+  artifacts, not to ship. Delete the draft afterward.
+
+Every trigger runs the same job: build on `ubuntu-22.04` + `macos-latest`, run
+the **full parity gate** (a red gate blocks the release), package each
+platform's installable app via `tools/package_release.sh` (macOS `.dmg`, Linux
 `.AppImage`), **smoke-boot the packaged app headlessly** (mount+launch the
 `.dmg`; `--appimage-extract-and-run` the AppImage), attach a GPLv2
 corresponding-source archive (`doom-<version>-source.tar.gz`), and publish the
-GitHub Release. Only a pushed `v*` tag publishes a public release; the manual
-button produces a **draft dry-run** (no tag, no public download URLs). Versioning
-(semantic `vMAJOR.MINOR.PATCH`): bump **PATCH** for fixes, **MINOR** for new
-user-visible capability, **MAJOR** for a break in the WAD/demo data contract or
-CLI. Use `-rcN`/`-beta` suffixes for pre-releases.
+GitHub Release.
 Full checklist + release-notes template: `docs/RELEASING.md`.
 
 > **Never invent a command you haven't verified.** The only command verified
@@ -165,5 +175,6 @@ residual risk named. *(CI runs on PRs but is not yet a required status check —
 enforcing it on `main` is a manual GitHub-UI step.)*
 
 Post-modernization work (docs, packaging, releases) follows the same
-branch-then-PR rule. **Releases are tagged from `main` only**, after the PR is
-merged and CI is green — never from a feature branch (see "Releases" above).
+branch-then-PR rule. **Releases are cut from `main` only** — bump the `VERSION`
+file in the PR so the release publishes automatically on merge; never release
+from a feature branch (see "Releases" above).

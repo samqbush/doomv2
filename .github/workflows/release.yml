@@ -1,18 +1,26 @@
 name: Release
 
-# Publish downloadable, ready-to-run macOS + Linux builds when a version tag is
-# pushed. Each build is validated by the full parity gate (same as CI), packaged
-# into a self-contained tarball (engine + vendored SDL2 + Freedoom doom1.wad +
-# licenses + launcher), then smoke-tested by extracting the tarball into a clean
-# dir and booting it headlessly -- proving the vendored dylib/rpath, renamed WAD
-# and launcher all work, not just the build tree. A GPLv2 corresponding-source
-# archive is attached alongside the binaries.
+# Publish downloadable, ready-to-run macOS + Linux builds. The primary trigger is
+# a merge to `main`: the workflow reads the repo-root VERSION file and, if that
+# version has not been released yet, tags it and publishes a public release. Each
+# build is validated by the full parity gate (same as CI), packaged into a
+# self-contained tarball (engine + vendored SDL2 + Freedoom doom1.wad + licenses +
+# launcher), then smoke-tested by extracting the tarball into a clean dir and
+# booting it headlessly -- proving the vendored dylib/rpath, renamed WAD and
+# launcher all work, not just the build tree. A GPLv2 corresponding-source archive
+# is attached alongside the binaries.
 #
-# Trigger:  git tag vX.Y.Z && git push origin vX.Y.Z
-# See .github/copilot-instructions.md ("Releases") for the tagging convention.
+# Release flow:  bump VERSION in your PR -> merge to main -> release publishes.
+# A merge that does NOT change VERSION re-runs this workflow but skips publishing
+# (the version's tag already exists), so it is safe/idempotent.
+# A pushed `v*` tag still works too (e.g. re-cutting a release). The manual
+# "Run workflow" button is a draft dry-run (no public tag/download URLs).
+# See .github/copilot-instructions.md ("Releases") for the versioning convention.
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -22,13 +30,79 @@ on:
         required: true
         default: v0.0.0-manual
 
-# Needed for softprops/action-gh-release to create/update the GitHub Release.
+# Needed for softprops/action-gh-release to create the tag + release.
 permissions:
   contents: write
 
 jobs:
+  # Resolve the target version and decide whether a publish is warranted. This
+  # keeps the expensive build matrix from running on every no-op merge to main.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      draft: ${{ steps.ver.outputs.draft }}
+      prerelease: ${{ steps.ver.outputs.prerelease }}
+      should_release: ${{ steps.ver.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          EVENT="${{ github.event_name }}"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            # Manual dry-run: use the input, publish as an inspectable draft.
+            V="${{ github.event.inputs.version }}"
+            DRAFT=true
+            SHOULD=true
+          elif [ "${GITHUB_REF}" = "refs/tags/${GITHUB_REF_NAME}" ] && \
+               [ "${GITHUB_REF#refs/tags/}" != "${GITHUB_REF}" ]; then
+            # Tag push (v1.2.3): version is the tag; always publish.
+            V="${GITHUB_REF_NAME}"
+            DRAFT=false
+            SHOULD=true
+          else
+            # Push to main: version comes from the VERSION file. Only publish if
+            # that version has not already been released (tag does not yet exist).
+            if [ ! -f VERSION ]; then
+              echo "FAIL: VERSION file missing at repo root"; exit 1
+            fi
+            V="$(tr -d ' \t\r\n' < VERSION)"
+            DRAFT=false
+            if git ls-remote --exit-code --tags origin "refs/tags/${V}" >/dev/null 2>&1; then
+              echo "Version ${V} already released (tag exists) -> skipping publish."
+              SHOULD=false
+            else
+              echo "Version ${V} is new -> will publish."
+              SHOULD=true
+            fi
+          fi
+
+          case "$V" in
+            v*) : ;;
+            *) echo "FAIL: version '$V' must start with 'v' (e.g. v1.0.0)"; exit 1 ;;
+          esac
+
+          # A pre-release suffix (v1.0.0-rc1, -beta, ...) -> mark prerelease.
+          case "$V" in
+            *-*) PRERELEASE=true ;;
+            *)   PRERELEASE=false ;;
+          esac
+
+          {
+            echo "version=$V"
+            echo "draft=$DRAFT"
+            echo "prerelease=$PRERELEASE"
+            echo "should_release=$SHOULD"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved: version=$V draft=$DRAFT prerelease=$PRERELEASE should_release=$SHOULD"
+
   release:
     name: release (${{ matrix.os }})
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -41,35 +115,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # full history so `git archive <tag>` works for the source asset
-
-      - name: Resolve version
-        id: ver
-        shell: bash
-        run: |
-          # Tag push -> GITHUB_REF_NAME is the tag (v1.2.3).
-          # Manual run -> GITHUB_REF_NAME is the branch (main), so use the input.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V="${{ github.event.inputs.version }}"
-          else
-            V="${GITHUB_REF_NAME}"
-          fi
-          case "$V" in
-            v*) : ;;
-            *) echo "FAIL: version '$V' must start with 'v' (e.g. v1.0.0)"; exit 1 ;;
-          esac
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          # Manual runs are dry-runs -> publish as a draft you can inspect/delete.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "draft=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "draft=false" >> "$GITHUB_OUTPUT"
-          fi
-          # A version with a pre-release suffix (v1.0.0-rc1, -beta, ...) -> mark prerelease.
-          case "$V" in
-            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
-            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
-          esac
-          echo "Release version: $V"
 
       - name: Install SDL2 + CMake + patchelf + appimagetool (Linux)
         if: runner.os == 'Linux'
@@ -114,7 +159,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Package installable artifact (.dmg / .AppImage)
-        run: ./tools/package_release.sh "${{ steps.ver.outputs.version }}" build dist
+        run: ./tools/package_release.sh "${{ needs.prepare.outputs.version }}" build dist
 
       - name: Smoke-test the packaged artifact
         shell: bash
@@ -173,16 +218,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           git archive --format=tar.gz \
-            --prefix="doom-${{ steps.ver.outputs.version }}-source/" \
-            -o "dist/doom-${{ steps.ver.outputs.version }}-source.tar.gz" HEAD
+            --prefix="doom-${{ needs.prepare.outputs.version }}-source/" \
+            -o "dist/doom-${{ needs.prepare.outputs.version }}-source.tar.gz" HEAD
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.version }}
-          name: DOOM (Modernized) ${{ steps.ver.outputs.version }}
-          draft: ${{ steps.ver.outputs.draft }}
-          prerelease: ${{ steps.ver.outputs.prerelease }}
+          tag_name: ${{ needs.prepare.outputs.version }}
+          name: DOOM (Modernized) ${{ needs.prepare.outputs.version }}
+          draft: ${{ needs.prepare.outputs.draft }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
           fail_on_unmatched_files: false
           files: |
             dist/*.dmg
