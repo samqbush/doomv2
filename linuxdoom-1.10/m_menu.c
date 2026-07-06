@@ -1055,10 +1055,6 @@ void M_Options(int choice)
 // CONTROLS MENU
 //
 
-// gamekeydown[] in g_game.c is NUMKEYS entries; keep bindings in range.
-#ifndef NUMKEYS
-#define NUMKEYS 256
-#endif
 
 //
 // M_KeyName
@@ -1571,8 +1567,11 @@ boolean M_Responder (event_t* ev)
     // M_Responder would otherwise synthesize into arrow/Enter presses.
     if (bindWait)
     {
+	// Swallow non-keyboard events (return true) so mouse/joystick motion
+	// cannot fall through to G_Responder and affect gameplay while the
+	// controls menu is waiting to capture a new binding.
 	if (ev->type != ev_keydown)
-	    return false;
+	    return true;
 
 	bindWait = 0;
 	if (ev->data1 != KEY_ESCAPE && M_KeyBindable(ev->data1))
