@@ -226,6 +226,7 @@ void M_DrawControls(void);
 void M_ChangeBinding(int choice);
 char* M_KeyName(int keycode);
 boolean M_KeyBindable(int keycode);
+void M_DrawMenuBackground(void);
 
 void M_DrawSaveLoadBorder(int x,int y);
 void M_SetupNextMenu(menu_t *menudef);
@@ -1956,6 +1957,50 @@ void M_StartControlPanel (void)
 
 
 //
+// M_DrawMenuBackground
+// Tiles a flat across the whole screen as a solid backdrop for menus/messages.
+// Used only while the attract loop (title/demo/credits) is running behind the
+// menu (GS_DEMOSCREEN); during actual play the menu stays a transparent overlay
+// on the frozen 3D view. Falls back to a flat fill if the flat lump is absent.
+//
+void M_DrawMenuBackground (void)
+{
+    byte*	src;
+    byte*	dest;
+    int		x;
+    int		y;
+    int		lump;
+
+    lump = W_CheckNumForName ("FLOOR4_8");
+    if (lump < 0)
+    {
+	memset (screens[0], 0, SCREENWIDTH*SCREENHEIGHT);
+	V_MarkRect (0, 0, SCREENWIDTH, SCREENHEIGHT);
+	return;
+    }
+
+    src = W_CacheLumpNum (lump, PU_CACHE);
+    dest = screens[0];
+
+    for (y=0 ; y<SCREENHEIGHT ; y++)
+    {
+	for (x=0 ; x<SCREENWIDTH/64 ; x++)
+	{
+	    memcpy (dest, src+((y&63)<<6), 64);
+	    dest += 64;
+	}
+	if (SCREENWIDTH&63)
+	{
+	    memcpy (dest, src+((y&63)<<6), SCREENWIDTH&63);
+	    dest += (SCREENWIDTH&63);
+	}
+    }
+
+    V_MarkRect (0, 0, SCREENWIDTH, SCREENHEIGHT);
+}
+
+
+//
 // M_Drawer
 // Called after the view has been rendered,
 // but before it has been blitted.
@@ -1970,6 +2015,10 @@ void M_Drawer (void)
     int			start;
 
     inhelpscreens = false;
+
+    // Cover the cycling attract-loop background so menu text stays readable.
+    if (gamestate == GS_DEMOSCREEN && (menuactive || messageToPrint))
+	M_DrawMenuBackground ();
 
     
     // Horiz. & Vertically center string and print it.
