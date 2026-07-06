@@ -1147,7 +1147,7 @@ void M_DrawControls(void)
     int		x;
     int		y;
 
-    M_WriteText(72, 12, "CONTROLS");
+    M_WriteText(160 - M_StringWidth("CONTROLS")/2, 12, "CONTROLS");
 
     x = ControlsDef.x;
     y = ControlsDef.y;
@@ -1543,7 +1543,6 @@ M_WriteText
 	cx+=w;
     }
 }
-
 
 
 //
