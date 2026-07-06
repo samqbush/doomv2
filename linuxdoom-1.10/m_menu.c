@@ -119,6 +119,10 @@ char gammamsg[5][26] =
 int			saveStringEnter;              
 int             	saveSlot;	// which slot to save in
 int			saveCharIndex;	// which char we're editing
+// Controls menu: when set, the next raw keypress is captured as a new binding
+// for ControlBinds[bindItem] instead of being handled as normal menu input.
+int			bindWait;
+int			bindItem;
 // old save description before edit
 char			saveOldString[SAVESTRINGSIZE];  
 
@@ -216,6 +220,12 @@ void M_DrawOptions(void);
 void M_DrawSound(void);
 void M_DrawLoad(void);
 void M_DrawSave(void);
+
+void M_Controls(int choice);
+void M_DrawControls(void);
+void M_ChangeBinding(int choice);
+char* M_KeyName(int keycode);
+boolean M_KeyBindable(int keycode);
 
 void M_DrawSaveLoadBorder(int x,int y);
 void M_SetupNextMenu(menu_t *menudef);
@@ -346,6 +356,7 @@ enum
     mousesens,
     option_empty2,
     soundvol,
+    controls,
     opt_end
 } options_e;
 
@@ -358,7 +369,8 @@ menuitem_t OptionsMenu[]=
     {-1,"",0},
     {2,"M_MSENS",	M_ChangeSensitivity,'m'},
     {-1,"",0},
-    {1,"M_SVOL",	M_Sound,'s'}
+    {1,"M_SVOL",	M_Sound,'s'},
+    {1,"",		M_Controls,'c'}
 };
 
 menu_t  OptionsDef =
@@ -368,6 +380,71 @@ menu_t  OptionsDef =
     OptionsMenu,
     M_DrawOptions,
     60,37,
+    0
+};
+
+//
+// CONTROLS MENU
+//
+// Rebindable keyboard actions. Each row maps a human-readable label to one of
+// the key_* config globals (defined in g_game.c, persisted via m_misc.c). The
+// items carry empty patch names because M_DrawControls draws every row itself
+// with the small font -- there is no M_* WAD lump for these.
+//
+extern int	key_right;
+extern int	key_left;
+extern int	key_up;
+extern int	key_down;
+extern int	key_strafeleft;
+extern int	key_straferight;
+extern int	key_fire;
+extern int	key_use;
+extern int	key_strafe;
+extern int	key_speed;
+
+typedef struct
+{
+    char*	label;
+    int*	key;
+} controlbind_t;
+
+controlbind_t ControlBinds[] =
+{
+    {"Move Forward",	&key_up},
+    {"Move Back",	&key_down},
+    {"Strafe Left",	&key_strafeleft},
+    {"Strafe Right",	&key_straferight},
+    {"Turn Left",	&key_left},
+    {"Turn Right",	&key_right},
+    {"Fire",		&key_fire},
+    {"Use / Open",	&key_use},
+    {"Run",		&key_speed},
+    {"Strafe On",	&key_strafe}
+};
+
+#define NUM_CONTROLBINDS (sizeof(ControlBinds)/sizeof(ControlBinds[0]))
+
+menuitem_t ControlsMenu[]=
+{
+    {1,"",M_ChangeBinding,'f'},
+    {1,"",M_ChangeBinding,'b'},
+    {1,"",M_ChangeBinding,'l'},
+    {1,"",M_ChangeBinding,'r'},
+    {1,"",M_ChangeBinding,'t'},
+    {1,"",M_ChangeBinding,'u'},
+    {1,"",M_ChangeBinding,'i'},
+    {1,"",M_ChangeBinding,'o'},
+    {1,"",M_ChangeBinding,'n'},
+    {1,"",M_ChangeBinding,'s'}
+};
+
+menu_t  ControlsDef =
+{
+    NUM_CONTROLBINDS,
+    &OptionsDef,
+    ControlsMenu,
+    M_DrawControls,
+    72,28,
     0
 };
 
@@ -963,11 +1040,140 @@ void M_DrawOptions(void)
 	
     M_DrawThermo(OptionsDef.x,OptionsDef.y+LINEHEIGHT*(scrnsize+1),
 		 9,screenSize);
+
+    M_WriteText(OptionsDef.x,OptionsDef.y+LINEHEIGHT*controls,"Controls");
 }
 
 void M_Options(int choice)
 {
     M_SetupNextMenu(&OptionsDef);
+}
+
+
+//
+// CONTROLS MENU
+//
+
+// gamekeydown[] in g_game.c is NUMKEYS entries; keep bindings in range.
+#ifndef NUMKEYS
+#define NUMKEYS 256
+#endif
+
+//
+// M_KeyName
+// Returns a short display string for a DOOM keycode (see doomdef.h KEY_*).
+// The result points at a static buffer that is overwritten on each call, so
+// the caller must consume it (draw/copy) before calling again.
+//
+char* M_KeyName(int keycode)
+{
+    static char	name[16];
+
+    switch (keycode)
+    {
+      case 0:			return "---";
+      case KEY_RIGHTARROW:	return "Right Arrow";
+      case KEY_LEFTARROW:	return "Left Arrow";
+      case KEY_UPARROW:		return "Up Arrow";
+      case KEY_DOWNARROW:	return "Down Arrow";
+      case KEY_ENTER:		return "Enter";
+      case KEY_TAB:		return "Tab";
+      case KEY_ESCAPE:		return "Esc";
+      case KEY_BACKSPACE:	return "Backspace";
+      case KEY_PAUSE:		return "Pause";
+      case KEY_RSHIFT:		return "Shift";
+      case KEY_RCTRL:		return "Ctrl";
+      case KEY_RALT:		return "Alt";
+      case KEY_EQUALS:		return "=";
+      case KEY_MINUS:		return "-";
+      case ' ':			return "Space";
+      case KEY_F1:		return "F1";
+      case KEY_F2:		return "F2";
+      case KEY_F3:		return "F3";
+      case KEY_F4:		return "F4";
+      case KEY_F5:		return "F5";
+      case KEY_F6:		return "F6";
+      case KEY_F7:		return "F7";
+      case KEY_F8:		return "F8";
+      case KEY_F9:		return "F9";
+      case KEY_F10:		return "F10";
+      case KEY_F11:		return "F11";
+      case KEY_F12:		return "F12";
+      default:
+	if (keycode > ' ' && keycode < 127)
+	{
+	    name[0] = toupper(keycode);
+	    name[1] = '\0';
+	    return name;
+	}
+	return "?";
+    }
+}
+
+//
+// M_KeyBindable
+// Rejects keycodes that must stay owned by the engine (menu/automap/global
+// functions) or that would index gamekeydown[] out of range. Escape is handled
+// separately as "cancel", so it is not bindable here either.
+//
+boolean M_KeyBindable(int keycode)
+{
+    if (keycode <= 0 || keycode >= NUMKEYS)
+	return false;
+
+    switch (keycode)
+    {
+      case KEY_ESCAPE:		// cancels the menu
+      case KEY_TAB:		// automap toggle
+      case KEY_PAUSE:		// pause
+      case KEY_MINUS:		// screen size down
+      case KEY_EQUALS:		// screen size up
+      case KEY_F1:  case KEY_F2:  case KEY_F3:  case KEY_F4:
+      case KEY_F5:  case KEY_F6:  case KEY_F7:  case KEY_F8:
+      case KEY_F9:  case KEY_F10: case KEY_F11: case KEY_F12:
+	return false;
+      default:
+	// Weapon slots 1-7 are hardcoded in G_BuildTiccmd.
+	if (keycode >= '1' && keycode <= '7')
+	    return false;
+	return true;
+    }
+}
+
+void M_DrawControls(void)
+{
+    int		i;
+    int		x;
+    int		y;
+
+    M_WriteText(72, 12, "CONTROLS");
+
+    x = ControlsDef.x;
+    y = ControlsDef.y;
+
+    for (i = 0; i < (int)NUM_CONTROLBINDS; i++)
+    {
+	M_WriteText(x, y, ControlBinds[i].label);
+	if (bindWait && bindItem == i)
+	    M_WriteText(x + 120, y, "???");
+	else
+	    M_WriteText(x + 120, y, M_KeyName(*ControlBinds[i].key));
+	y += LINEHEIGHT;
+    }
+
+    M_WriteText(16, ControlsDef.y + LINEHEIGHT * (int)NUM_CONTROLBINDS + 6,
+		"Enter=change  Esc=cancel");
+}
+
+void M_ChangeBinding(int choice)
+{
+    bindItem = choice;
+    bindWait = 1;
+}
+
+void M_Controls(int choice)
+{
+    M_SetupNextMenu(&ControlsDef);
 }
 
 
@@ -1358,6 +1564,23 @@ boolean M_Responder (event_t* ev)
     static  int     lastx = 0;
 	
     ch = -1;
+
+    // Controls menu: capture the next raw keyboard press as a new binding.
+    // Runs before all normal menu handling so keys like arrows/Enter can be
+    // bound. Only real keyboard events count -- ignore mouse/joystick, which
+    // M_Responder would otherwise synthesize into arrow/Enter presses.
+    if (bindWait)
+    {
+	if (ev->type != ev_keydown)
+	    return false;
+
+	bindWait = 0;
+	if (ev->data1 != KEY_ESCAPE && M_KeyBindable(ev->data1))
+	    *ControlBinds[bindItem].key = ev->data1;
+
+	S_StartSound(NULL,sfx_pistol);
+	return true;
+    }
 	
     if (ev->type == ev_joystick && joywait < I_GetTime())
     {
