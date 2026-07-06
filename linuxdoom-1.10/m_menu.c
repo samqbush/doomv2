@@ -1162,7 +1162,7 @@ void M_DrawControls(void)
 	y += LINEHEIGHT;
     }
 
-    M_WriteText(16, ControlsDef.y + LINEHEIGHT * (int)NUM_CONTROLBINDS + 6,
+    M_WriteText(16, ControlsDef.y + LINEHEIGHT * (int)NUM_CONTROLBINDS - 4,
 		"Enter=change  Esc=cancel");
 }
 
